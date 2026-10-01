@@ -1,0 +1,1871 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>xLights sequence catalogue</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,800&display=swap">
+<style>
+:root{
+  --night:#0f1b2d; --deep:#172741; --wire:#2a3e5f; --frost:#eaf0f8; --mist:#9db0cb;
+  --bulb:#ffc861; --holly:#ef5a5f; --pine:#49b97c; --ice:#79c3ff; --amber:#ff9f43;
+  --display:"Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --body:"Atkinson Hyperlegible", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --r-lg:14px; --r-sm:6px;
+}
+*{box-sizing:border-box}
+html{color-scheme:dark}
+body{margin:0;background:var(--night);color:var(--frost);font:16px/1.5 var(--body)}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--bulb);outline-offset:2px}
+[hidden]{display:none !important}
+.wrap{max-width:1400px;margin:0 auto;padding-left:clamp(16px,3vw,40px);padding-right:clamp(16px,3vw,40px)}
+
+/* header */
+header.wrap{padding-top:36px;padding-bottom:8px}
+.string{display:block;width:100%;height:46px;overflow:visible}
+.string path{fill:none;stroke:var(--wire);stroke-width:1.5}
+.string circle{opacity:.28}
+.string.lit circle{animation:chase 1.6s ease-out forwards;animation-delay:calc(var(--i) * 28ms)}
+.string.busy circle{animation:twinkle 1.2s ease-in-out infinite alternate;animation-delay:calc(var(--i) * 45ms)}
+@keyframes chase{0%{opacity:.28}25%{opacity:1;filter:drop-shadow(0 0 6px currentColor)}100%{opacity:.9;filter:drop-shadow(0 0 3px currentColor)}}
+@keyframes twinkle{from{opacity:.25}to{opacity:1;filter:drop-shadow(0 0 5px currentColor)}}
+h1{font:800 clamp(2.2rem,5.5vw,4.2rem)/1 var(--display);letter-spacing:-.02em;margin:18px 0 10px}
+.summary{color:var(--mist);font-size:1.125rem;margin:0;max-width:70ch}
+.summary strong{color:var(--frost);font-weight:700}
+.actions-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
+.progress{margin-top:18px;max-width:560px}
+.progress .track{height:6px;background:var(--deep);border-radius:999px;overflow:hidden}
+.progress .fill{height:100%;width:0;background:var(--bulb);transition:width .15s}
+.progress p{margin:8px 0 0;color:var(--mist);font-size:.95rem}
+.alert{margin:22px 0 0;display:flex;gap:14px;align-items:center;flex-wrap:wrap;padding:14px 18px;
+  border-left:4px solid var(--holly);background:rgba(239,90,95,.1);border-radius:0 var(--r-sm) var(--r-sm) 0}
+.alert p{margin:0;flex:1 1 320px}
+.alert.warn{border-color:var(--amber);background:rgba(255,159,67,.1)}
+.alert.good{border-color:var(--pine);background:rgba(73,185,124,.1)}
+.alert.info{border-color:var(--ice);background:rgba(121,195,255,.08)}
+
+/* landing */
+.landing{padding-top:10px;padding-bottom:80px}
+.landing p{max-width:62ch}
+.landing p{color:var(--mist);font-size:1.1rem}
+.landing .actions-row{margin-top:26px}
+.fine{font-size:.9rem;color:var(--mist)}
+
+/* toolbar */
+.bar{position:sticky;top:0;z-index:5;background:rgba(15,27,45,.94);backdrop-filter:blur(8px);border-bottom:1px solid var(--wire);margin-top:26px}
+.bar .wrap{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding-top:12px;padding-bottom:12px}
+.search{flex:1 1 280px;position:relative}
+.search input{width:100%;padding:10px 14px 10px 38px;background:var(--deep);border:1px solid var(--wire);border-radius:999px}
+.search svg{position:absolute;left:13px;top:50%;transform:translateY(-50%);color:var(--mist)}
+select,.btn{background:var(--deep);border:1px solid var(--wire);border-radius:var(--r-sm);padding:9px 12px}
+.btn{cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+.btn:hover{border-color:var(--mist)}
+.btn.primary{background:var(--bulb);color:#1b1405;border-color:var(--bulb);font-weight:700}
+.btn.big{padding:13px 22px;font-size:1.05rem}
+.btn:disabled{opacity:.5;cursor:progress}
+.seg{display:inline-flex;border:1px solid var(--wire);border-radius:var(--r-sm);overflow:hidden}
+.seg button{background:var(--deep);border:0;padding:9px 12px;cursor:pointer;color:var(--mist)}
+.seg button[aria-pressed="true"]{background:var(--wire);color:var(--frost)}
+.count{color:var(--mist);font-size:.9rem;margin-left:auto}
+
+/* grid */
+main.wrap{padding-top:28px;padding-bottom:80px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:28px 22px}
+.card{background:none;border:0;padding:0;text-align:left;cursor:pointer;display:flex;flex-direction:column;gap:10px}
+.art{position:relative;aspect-ratio:1;border-radius:var(--r-sm);overflow:hidden;background:var(--deep)}
+.art img{width:100%;height:100%;object-fit:cover;display:block}
+.ph{width:100%;height:100%;display:grid;place-items:center;font:800 2.6rem var(--display);color:rgba(255,255,255,.85)}
+.card:hover .art{outline:2px solid var(--bulb);outline-offset:3px}
+.flag{position:absolute;left:8px;bottom:8px;font-size:.78rem;font-weight:700;padding:3px 8px;border-radius:999px;color:#10131a}
+.flag.missing{background:var(--holly)} .flag.guess{background:var(--amber)} .flag.exempt{background:var(--ice)}
+.ttl{font-weight:700;line-height:1.25;overflow-wrap:anywhere}
+.sub{color:var(--mist);font-size:.92rem;line-height:1.35}
+.meta{display:flex;justify-content:space-between;gap:8px;color:var(--mist);font-size:.85rem}
+.meta span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dur{font-variant-numeric:tabular-nums;color:var(--bulb)}
+
+/* list */
+.tablewrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:.95rem}
+th{text-align:left;color:var(--mist);font-weight:400;padding:8px 10px;border-bottom:1px solid var(--wire);white-space:nowrap;cursor:pointer}
+th[aria-sort]{color:var(--frost)}
+td{padding:8px 10px;border-bottom:1px solid rgba(42,62,95,.55);vertical-align:middle}
+tr.row{cursor:pointer} tr.row:hover td{background:var(--deep)}
+td.t{display:flex;gap:12px;align-items:center;min-width:240px}
+td.t .thumb{width:40px;height:40px;flex:none;border-radius:4px;overflow:hidden;background:var(--deep)}
+td.t .thumb .ph{font-size:1rem}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;vertical-align:1px}
+.dot.ok{background:var(--pine)} .dot.missing{background:var(--holly)} .dot.guess{background:var(--amber)} .dot.exempt{background:var(--ice)}
+.empty{padding:60px 0;color:var(--mist);text-align:center}
+
+/* dialogs */
+dialog{max-width:min(860px,94vw);width:100%;border:1px solid var(--wire);border-radius:var(--r-lg);background:var(--deep);color:var(--frost);padding:0}
+dialog::backdrop{background:rgba(5,10,20,.7)}
+.dl{display:grid;grid-template-columns:260px 1fr;gap:26px;padding:26px}
+@media (max-width:640px){.dl{grid-template-columns:1fr}}
+.dl h2,.pane h2{font:800 1.9rem/1.1 var(--display);margin:0 0 4px}
+.dl .by{color:var(--mist);margin:0 0 18px;font-size:1.1rem}
+dl.facts{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;margin:0 0 18px;font-size:.95rem}
+dl.facts dt{color:var(--mist)} dl.facts dd{margin:0;overflow-wrap:anywhere}
+.song{padding:12px 14px;border-radius:var(--r-sm);background:var(--night);margin-bottom:18px;font-size:.95rem;overflow-wrap:anywhere}
+.song b{display:block;margin-bottom:2px}
+.actions{display:flex;flex-wrap:wrap;gap:8px}
+.close{position:absolute;right:12px;top:10px;background:none;border:0;color:var(--mist);font-size:1.6rem;cursor:pointer;line-height:1}
+.pane{padding:26px;display:grid;gap:18px}
+.field{display:grid;gap:6px}
+.field > span{font-weight:700}
+.field small{color:var(--mist)}
+.field textarea,.field input[type=text],.field input[type=password],.field select{background:var(--night);border:1px solid var(--wire);border-radius:var(--r-sm);padding:9px 12px;width:100%}
+.field textarea{min-height:92px;resize:vertical;font-size:.95rem}
+.check{display:flex;gap:10px;align-items:flex-start}
+.check input{margin-top:5px;accent-color:var(--bulb)}
+.folders{margin:0;padding:0;list-style:none;display:grid;gap:6px}
+.folders li{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:8px 12px;background:var(--night);border-radius:var(--r-sm)}
+a{color:var(--ice)}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--frost);color:var(--night);
+  padding:10px 18px;border-radius:999px;font-weight:700;opacity:0;pointer-events:none;transition:opacity .2s;max-width:90vw;z-index:20}
+.toast.show{opacity:1}
+footer.wrap{color:var(--mist);font-size:.85rem;padding-bottom:40px}
+@media (max-width:640px){.bar{position:static}.count{margin-left:0}}
+@media (prefers-reduced-motion:reduce){.string.lit circle,.string.busy circle{animation:none;opacity:.9}.toast,.progress .fill{transition:none}}
+/* v3 additions */
+.summary button.link{background:none;border:0;padding:0;color:var(--ice);text-decoration:underline;cursor:pointer;font:inherit}
+.log{max-height:280px;overflow:auto;margin:0;padding:12px 14px;list-style:none;background:var(--night);border-radius:var(--r-sm);font-size:.92rem;display:grid;gap:4px}
+.log li{color:var(--mist)} .log li.me{color:var(--frost)} .log li.err{color:var(--holly)} .log li.ok{color:var(--pine)}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:14px} @media (max-width:640px){.row2{grid-template-columns:1fr}}
+.tasks{display:grid;gap:8px}
+.meter{color:var(--mist);font-size:.9rem;margin:0}
+.props{display:grid;gap:10px;margin:0;padding:0;list-style:none;max-height:58vh;overflow:auto}
+.prop{display:grid;grid-template-columns:1fr auto;gap:8px 14px;padding:12px 14px;background:var(--night);border-radius:var(--r-sm);border-left:3px solid var(--wire)}
+.prop.hi{border-left-color:var(--pine)} .prop.mid{border-left-color:var(--amber)} .prop.lo{border-left-color:var(--holly)}
+.prop .what{font-weight:700;overflow-wrap:anywhere} .prop .why{color:var(--mist);font-size:.92rem;grid-column:1 / -1;overflow-wrap:anywhere}
+.prop .btns{display:flex;gap:6px;align-items:start}
+.prop img{width:56px;height:56px;border-radius:4px;object-fit:cover;vertical-align:middle;margin-right:10px}
+.report{display:grid;gap:14px}
+.report ul{margin:0;padding-left:20px;color:var(--mist);max-height:180px;overflow:auto;font-size:.92rem}
+.report h3{margin:0;font-size:1rem}
+.aiby{font-size:.9rem;color:var(--mist);margin:0 0 14px}
+dialog{max-height:94vh;overflow:auto}
+#detail .nav{display:flex;align-items:center;gap:8px;min-height:44px;padding:12px 56px 0 26px;color:var(--mist);font-size:.92rem}
+#detail .dl{padding-top:10px}
+.fix{display:grid;gap:12px;margin:0 0 18px;padding:16px;border:1px solid var(--wire);border-radius:var(--r-sm)}
+.fix h3{margin:0;font-size:1rem}
+.fix input[type=search]{width:100%;padding:9px 12px;background:var(--night);border:1px solid var(--wire);border-radius:var(--r-sm)}
+.cands{list-style:none;margin:0;padding:0;display:grid;gap:6px;max-height:280px;overflow:auto}
+.cand{display:grid;grid-template-columns:1fr auto;gap:4px 12px;align-items:center;padding:9px 12px;background:var(--night);border-radius:var(--r-sm)}
+.cand .nm,.picked .nm{overflow-wrap:anywhere} .cand .tg,.picked .tg{color:var(--mist);font-size:.88rem;overflow-wrap:anywhere}
+.cand .btns{display:flex;gap:6px}
+.picked{padding:12px 14px;background:var(--night);border-radius:var(--r-sm);display:grid;gap:6px}
+.len-ok{color:var(--pine)} .len-off{color:var(--amber)}
+.links{display:flex;flex-wrap:wrap;gap:8px}
+.btn.sm{padding:6px 10px;font-size:.9rem}
+</style>
+</head>
+<body>
+<header class="wrap">
+  <svg class="string" id="string" aria-hidden="true"></svg>
+  <h1>Sequence catalogue</h1>
+  <p class="summary" id="summary">See every xLights sequence you own, with its album art, artist, vendor and length, and find any sequence that's missing its song.</p>
+  <div class="actions-row" id="headActions" hidden>
+    <button class="btn" id="rescan">Rescan</button>
+    <button class="btn" id="addMusic">Add a music folder</button>
+    <button class="btn primary" id="openAI">Fix with Claude</button>
+    <button class="btn" id="openReview" hidden>Review suggestions</button>
+    <button class="btn" id="download">Download catalogue</button>
+    <button class="btn" id="upload">Upload to Google Drive</button>
+    <button class="btn" id="openSettings">Settings</button>
+  </div>
+  <div class="progress" id="progress" hidden><div class="track"><div class="fill" id="pFill"></div></div><p id="pText"></p></div>
+  <div id="alert"></div>
+</header>
+
+<section class="wrap landing" id="landing">
+  <p>Choose the folder where you keep your sequences, usually your xLights show folder. Every folder inside it is searched, including vendor .zip downloads. You can add other music folders afterwards.</p>
+  <p class="fine">Your files are read by this page on your own computer. Nothing is uploaded unless you use Claude or Google Drive.</p>
+  <div class="actions-row">
+    <button class="btn primary big" id="pickShow">Choose show folder</button>
+    <button class="btn big" id="resume" hidden></button>
+    <button class="btn big" id="openSettings2">Settings</button>
+  </div>
+</section>
+
+<div class="bar" role="search" id="bar" hidden>
+  <div class="wrap">
+    <label class="search">
+      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="5.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M11 11l4 4" stroke="currentColor" stroke-width="1.6"/></svg>
+      <input id="q" type="search" placeholder="Search songs, artists, vendors…" aria-label="Search sequences" autocomplete="off">
+    </label>
+    <select id="vendor" aria-label="Vendor"><option value="">All vendors</option></select>
+    <select id="status" aria-label="Song status">
+      <option value="">Any song status</option>
+      <option value="ok">Song found</option>
+      <option value="guess">Song needs checking</option>
+      <option value="missing">Song missing</option>
+      <option value="problem">Missing or needs checking</option>
+      <option value="exempt">No song needed</option>
+      <option value="claude">Changed by Claude</option>
+    </select>
+    <select id="sort" aria-label="Sort by">
+      <option value="title">Sort by song</option>
+      <option value="artist">Sort by artist</option>
+      <option value="vendor">Sort by vendor</option>
+      <option value="duration">Sort by length</option>
+      <option value="modified">Recently changed</option>
+    </select>
+    <div class="seg" role="group" aria-label="Layout">
+      <button id="vGrid" aria-pressed="true">Covers</button>
+      <button id="vList" aria-pressed="false">List</button>
+    </div>
+    <span class="count" id="count" aria-live="polite"></span>
+  </div>
+</div>
+
+<main class="wrap" id="main"></main>
+<footer class="wrap" id="foot"></footer>
+
+<dialog id="detail" aria-labelledby="dTitle"><div id="dBody"></div></dialog>
+
+<dialog id="aiDlg" aria-labelledby="aiTitle">
+  <div class="pane">
+    <button class="close" aria-label="Close" data-close>×</button>
+    <h2 id="aiTitle">Fix with Claude</h2>
+    <p class="fine" style="margin:0">Claude works through the sequences that need attention. It searches every folder and zip for the right song, compares song lengths with sequence lengths, looks up vendors and artists on the web, and finds album art. Nothing changes until you accept its suggestions.</p>
+    <div id="aiSetup" class="pane" style="padding:0">
+      <label class="field"><span>Anthropic API key</span>
+        <input type="password" id="aiKey" autocomplete="off" spellcheck="false" placeholder="sk-ant-…">
+        <small>Create one at console.anthropic.com. Usage is billed to your Anthropic account. The key is sent only to Anthropic.</small></label>
+      <label class="check"><input type="checkbox" id="aiRemember"><span>Remember the key on this device</span></label>
+      <div class="row2">
+        <label class="field"><span>Model</span>
+          <select id="aiModel">
+            <option value="claude-sonnet-5-5">Claude Sonnet 5.5 (recommended)</option>
+            <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (faster, lower cost)</option>
+            <option value="claude-opus-5-5">Claude Opus 5.5 (most thorough)</option>
+          </select></label>
+        <label class="field"><span>Sequences per batch</span>
+          <select id="aiBatch"><option>5</option><option selected>10</option><option>15</option></select></label>
+      </div>
+      <div class="field"><span>What to work on</span>
+        <div class="tasks" id="aiTasks"></div></div>
+      <label class="check"><input type="checkbox" id="aiWeb"><span>Let Claude search the web for vendors and artists</span></label>
+      <label class="check"><input type="checkbox" id="aiAuto"><span>Accept suggestions automatically when Claude is at least 90% sure</span></label>
+    </div>
+    <p class="meter" id="aiMeter"></p>
+    <ol class="log" id="aiLog" hidden></ol>
+    <div class="actions">
+      <button class="btn primary" id="aiStart">Start</button>
+      <button class="btn" id="aiStop" hidden>Stop</button>
+      <button class="btn" id="aiReview" hidden>Review suggestions</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="reviewDlg" aria-labelledby="rTitle">
+  <div class="pane">
+    <button class="close" aria-label="Close" data-close>×</button>
+    <h2 id="rTitle">Claude's suggestions</h2>
+    <p class="fine" style="margin:0" id="rIntro"></p>
+    <ul class="props" id="rList"></ul>
+    <div class="actions">
+      <button class="btn primary" id="rAcceptSure">Accept all 90% or higher</button>
+      <button class="btn" id="rAcceptAll">Accept all</button>
+      <button class="btn" id="rRejectAll">Reject all</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="reportDlg" aria-labelledby="repTitle">
+  <div class="pane">
+    <button class="close" aria-label="Close" data-close>×</button>
+    <h2 id="repTitle">Scan report</h2>
+    <div class="report" id="repBody"></div>
+  </div>
+</dialog>
+
+<dialog id="settings" aria-labelledby="sTitle">
+  <form method="dialog" class="pane" id="sForm">
+    <button class="close" aria-label="Close" value="cancel">×</button>
+    <h2 id="sTitle">Settings</h2>
+    <div class="field"><span>Folders</span><ul class="folders" id="folderList"></ul></div>
+    <label class="check"><input type="checkbox" id="sZips"><span>Look inside .zip files for sequences and songs</span></label>
+    <label class="check"><input type="checkbox" id="sBackups"><span>Include xLights backup folders</span></label>
+    <label class="field"><span>Other folders to skip</span><input type="text" id="sSkip" spellcheck="false"><small>Separated by commas; * matches anything.</small></label>
+    <label class="field"><span>Sequences that don't need a song</span>
+      <textarea id="sExempt" spellcheck="false" placeholder="Misc/Show Intro.xsq&#10;Intros/*&#10;*Countdown*"></textarea>
+      <small>One per line. Use the path inside your show folder; * matches anything.</small></label>
+    <label class="check"><input type="checkbox" id="sAnim"><span>Animation sequences don't need a song</span></label>
+    <label class="field"><span>Vendor names</span>
+      <textarea id="sVendors" spellcheck="false" placeholder="Acme Pixel Co = *acmepixel.com*, Acme*, Vendors/Acme/*"></textarea>
+      <small>One vendor per line: name = patterns, separated by commas. Patterns are checked against the sequence author, email, website and path.</small></label>
+    <label class="check"><input type="checkbox" id="sFolderVendor"><span>Use the top folder name as the vendor when a sequence doesn't name one</span></label>
+    <label class="check"><input type="checkbox" id="sOnline"><span>Look up missing album art online during every scan (Apple Music search)</span></label>
+    <label class="field"><span>Google Drive client ID</span><input type="text" id="sClient" spellcheck="false" placeholder="1234567890-abc.apps.googleusercontent.com"><small>Needed once for uploading. The README explains how to get one.</small></label>
+    <label class="field"><span>Google Drive folder name</span><input type="text" id="sFolderName" spellcheck="false"></label>
+    <div class="actions">
+      <button class="btn primary" value="save" id="sSave">Save settings</button>
+      <button class="btn" type="button" id="sExport">Export settings</button>
+      <label class="btn" for="sImport">Import settings</label>
+      <input type="file" id="sImport" accept=".json,application/json" hidden>
+      <button class="btn" type="button" id="sClear">Clear saved data</button>
+    </div>
+  </form>
+</dialog>
+
+<input type="file" id="dirInput" webkitdirectory multiple hidden>
+<input type="file" id="songFile" accept="audio/*,video/*,.mp3,.m4a,.wav,.ogg,.flac,.wma,.aac,.opus" hidden>
+<div class="toast" id="toast" role="status"></div>
+
+<script id="catalog-data" type="application/json"></script>
+<script>
+(() => {
+'use strict';
+// Snapshot of this page before anything is rendered: used to write the standalone catalogue.
+const PRISTINE = '<!doctype html>\n' + document.documentElement.outerHTML;
+const VERSION = '3.0.0';
+const LIBS = {
+  tags: 'https://cdn.jsdelivr.net/npm/jsmediatags@3.9.7/dist/jsmediatags.min.js',
+  gis: 'https://accounts.google.com/gsi/client',
+};
+const SEQ_EXTS = ['.xsq', '.xsqz'];
+const MEDIA_EXTS = ['.mp3','.m4a','.aac','.wav','.ogg','.flac','.wma','.opus','.mp4','.m4v','.mov','.avi','.mkv','.webm'];
+const BACKUP_DIRS = ['backup', 'backups'];
+const ZIP_MAX = 4 * 1024 ** 3;
+const DEFAULTS = {
+  no_audio_expected: [], animation_needs_no_song: true, vendors: [], vendor_from_folder: false,
+  skip_folders: ['__MACOSX', '.*', '$RECYCLE.BIN', 'System Volume Information'], include_backups: false, look_in_zips: true,
+  fetch_online_art: false, overrides: {},
+  gdrive_client_id: '', gdrive_folder_name: 'xLights Catalogue', gdrive_folder_id: '',
+  ai_model: 'claude-sonnet-5-5', ai_batch: 10, ai_tasks: { song: true, vendor: true, details: true, art: true }, ai_web: true, ai_auto: false,
+};
+const STATUS = {ok:'Song found', guess:'Check song', missing:'No song', exempt:'No song needed'};
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const fmtN = n => n.toLocaleString();
+
+// ------------------------------------------------------------------ storage
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('xlc-' + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem('xlc-' + k, JSON.stringify(v)); } catch {} },
+  del(k) { try { localStorage.removeItem('xlc-' + k); } catch {} },
+};
+const idb = (() => {
+  let dbp;
+  const open = () => dbp ||= new Promise((res, rej) => {
+    const r = indexedDB.open('xlcatalog', 1);
+    r.onupgradeneeded = () => ['kv','seq','audio','online'].forEach(s => r.result.createObjectStore(s));
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  });
+  const tx = async (s, mode, fn) => {
+    const db = await open();
+    return new Promise((res, rej) => {
+      const t = db.transaction(s, mode), req = fn(t.objectStore(s));
+      t.oncomplete = () => res(req && req.result); t.onerror = () => rej(t.error);
+    });
+  };
+  return {
+    get: (s, k) => tx(s, 'readonly', st => st.get(k)).catch(() => undefined),
+    set: (s, k, v) => tx(s, 'readwrite', st => st.put(v, k)).catch(() => {}),
+    del: (s, k) => tx(s, 'readwrite', st => st.delete(k)).catch(() => {}),
+    clear: s => tx(s, 'readwrite', st => st.clear()).catch(() => {}),
+  };
+})();
+
+let cfg = Object.assign({}, DEFAULTS, store.get('settings', {}));
+cfg.ai_tasks = Object.assign({}, DEFAULTS.ai_tasks, cfg.ai_tasks);
+cfg.overrides ||= {};
+const saveCfg = () => store.set('settings', cfg);
+
+// ------------------------------------------------------------------ helpers
+const loaded = {};
+function loadScript(src) {
+  return loaded[src] ||= new Promise((res, rej) => {
+    const s = document.createElement('script'); s.src = src; s.async = true;
+    s.onload = res; s.onerror = () => { delete loaded[src]; rej(new Error('Could not load ' + new URL(src).hostname + '. Check your internet connection.')); };
+    document.head.appendChild(s);
+  });
+}
+const ext = n => { const i = n.lastIndexOf('.'); return i < 0 ? '' : n.slice(i).toLowerCase(); };
+const baseAny = p => (p || '').trim().split(/[\\/]/).pop();
+const stemOf = n => { n = baseAny(n); const i = n.lastIndexOf('.'); return i > 0 ? n.slice(0, i) : n; };
+const dirOf = p => p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '';
+function joinPath(dir, rel) {
+  const parts = (dir ? dir + '/' : '').concat(rel.replace(/\\/g, '/')).split('/');
+  const out = [];
+  for (const p of parts) { if (!p || p === '.') continue; if (p === '..') out.pop(); else out.push(p); }
+  return out.join('/');
+}
+function normName(n) {
+  let s = stemOf(n).toLowerCase();
+  s = s.replace(/^\d{1,3}[\s._-]+/, '').replace(/\(.*?\)|\[.*?\]/g, '');
+  s = s.replace(/\b(xlights|sequence|seq|v\d+|final|mix)\b/g, '');
+  return s.replace(/[^a-z0-9]/g, '');
+}
+const cleanTitle = s => s.replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
+function splitArtistTitle(stem) {
+  const m = cleanTitle(stem).match(/^\s*(?:\d{1,3}[\s._-]+)?(.+?)\s+-\s+(.+)$/);
+  return m ? [m[1].trim(), m[2].trim()] : ['', ''];
+}
+const globRe = {};
+function globMatch(value, patterns) {
+  const v = String(value).replace(/\\/g, '/').toLowerCase();
+  return patterns.some(p => {
+    const re = globRe[p] ||= new RegExp('^' + p.replace(/\\/g, '/').toLowerCase()
+      .replace(/[.+^${}()|[\]]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$');
+    return re.test(v);
+  });
+}
+// Ratcliff/Obershelp similarity, the same measure Python's difflib uses
+function matches(a, b) {
+  if (!a.length || !b.length) return 0;
+  let best = 0, ai = 0, bi = 0, prev = new Array(b.length + 1).fill(0);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = new Array(b.length + 1).fill(0);
+    for (let j = 1; j <= b.length; j++) if (a[i-1] === b[j-1]) {
+      cur[j] = prev[j-1] + 1; if (cur[j] > best) { best = cur[j]; ai = i - best; bi = j - best; }
+    }
+    prev = cur;
+  }
+  return best ? best + matches(a.slice(0, ai), b.slice(0, bi)) + matches(a.slice(ai + best), b.slice(bi + best)) : 0;
+}
+const similarity = (a, b) => (a.length + b.length) ? 2 * matches(a, b) / (a.length + b.length) : 0;
+function hash(str) { let h1 = 0xdeadbeef, h2 = 0x41c6ce57; for (let i = 0; i < str.length; i++) { const c = str.charCodeAt(i); h1 = Math.imul(h1 ^ c, 2654435761); h2 = Math.imul(h2 ^ c, 1597334677); } h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909); h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909); return (h2 >>> 0).toString(16).padStart(8, '0') + (h1 >>> 0).toString(16).padStart(8, '0'); }
+async function pool(items, n, fn) {
+  let i = 0; const out = new Array(items.length);
+  await Promise.all(Array.from({length: Math.min(n, items.length)}, async () => { while (i < items.length) { const k = i++; out[k] = await fn(items[k], k); } }));
+  return out;
+}
+function download(name, data, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([data], {type}));
+  a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
+// ------------------------------------------------------------------ zip reading
+// Reads only the zip's directory, then just the entries needed, so multi-GB vendor zips don't fill memory.
+async function zipList(blob) {
+  const tailLen = Math.min(blob.size, 65557);
+  const tail = new DataView(await blob.slice(blob.size - tailLen).arrayBuffer());
+  let eocd = -1;
+  for (let i = tailLen - 22; i >= 0; i--) if (tail.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  if (eocd < 0) throw new Error('not a zip file');
+  let count = tail.getUint16(eocd + 10, true), cdSize = tail.getUint32(eocd + 12, true), cdOff = tail.getUint32(eocd + 16, true);
+  if (cdOff === 0xffffffff || count === 0xffff) {  // zip64
+    const loc = eocd - 20;
+    if (loc < 0 || tail.getUint32(loc, true) !== 0x07064b50) throw new Error('unsupported zip format');
+    const z = new DataView(await blob.slice(Number(tail.getBigUint64(loc + 8, true))).slice(0, 56).arrayBuffer());
+    count = Number(z.getBigUint64(32, true)); cdSize = Number(z.getBigUint64(40, true)); cdOff = Number(z.getBigUint64(48, true));
+  }
+  const cd = new DataView(await blob.slice(cdOff, cdOff + cdSize).arrayBuffer());
+  const utf8 = new TextDecoder(), out = [];
+  for (let p = 0; p + 46 <= cd.byteLength && cd.getUint32(p, true) === 0x02014b50; ) {
+    const flags = cd.getUint16(p + 8, true), method = cd.getUint16(p + 10, true);
+    const dtime = cd.getUint16(p + 12, true), ddate = cd.getUint16(p + 14, true);
+    let csize = cd.getUint32(p + 20, true), usize = cd.getUint32(p + 24, true), off = cd.getUint32(p + 42, true);
+    const nlen = cd.getUint16(p + 28, true), xlen = cd.getUint16(p + 30, true), clen = cd.getUint16(p + 32, true);
+    const name = utf8.decode(new Uint8Array(cd.buffer, cd.byteOffset + p + 46, nlen));
+    for (let x = p + 46 + nlen; x + 4 <= p + 46 + nlen + xlen; ) {  // zip64 extra field
+      const id = cd.getUint16(x, true), sz = cd.getUint16(x + 2, true);
+      if (id === 1) { let q = x + 4;
+        if (usize === 0xffffffff) { usize = Number(cd.getBigUint64(q, true)); q += 8; }
+        if (csize === 0xffffffff) { csize = Number(cd.getBigUint64(q, true)); q += 8; }
+        if (off === 0xffffffff) { off = Number(cd.getBigUint64(q, true)); } }
+      x += 4 + sz;
+    }
+    const date = new Date(1980 + (ddate >> 9), ((ddate >> 5) & 15) - 1, ddate & 31, dtime >> 11, (dtime >> 5) & 63, (dtime & 31) * 2);
+    out.push({ name, method, csize, usize, off, encrypted: !!(flags & 1), dir: name.endsWith('/'), date: date.getTime() });
+    p += 46 + nlen + xlen + clen;
+  }
+  return out;
+}
+async function zipRead(blob, e) {
+  if (e.encrypted) throw new Error('file is password protected');
+  const lh = new DataView(await blob.slice(e.off, e.off + 30).arrayBuffer());
+  if (lh.getUint32(0, true) !== 0x04034b50) throw new Error('damaged zip entry');
+  const start = e.off + 30 + lh.getUint16(26, true) + lh.getUint16(28, true);
+  const data = blob.slice(start, start + e.csize);
+  if (e.method === 0) return data;
+  if (e.method === 8) return new Response(data.stream().pipeThrough(new DecompressionStream('deflate-raw'))).blob();
+  throw new Error('unsupported compression');
+}
+const zipLists = new Map();
+function zipListCached(file, key) { if (!zipLists.has(key)) zipLists.set(key, zipList(file)); return zipLists.get(key); }
+
+// ------------------------------------------------------------------ walking the folders
+// A source is {kind:'handle', handle, name} (Chrome/Edge, remembered) or {kind:'files', files, name} (all browsers)
+const S = { show: null, music: [], seqs: null, index: null, catalog: null, report: null, tree: null, proposals: [] };
+
+function skipReason(name) {
+  if (!cfg.include_backups && BACKUP_DIRS.includes(name.toLowerCase())) return 'xLights backup folder';
+  if (cfg.skip_folders.some(p => globMatch(name, [p]))) return name.startsWith('.') ? 'hidden folder' : 'in your skip list';
+  return '';
+}
+function newReport() {
+  return { folders: 0, files: 0, seq: 0, xsqz: 0, legacy: 0, media: 0, zips: 0, zipOpened: 0, zipSeq: 0, zipMedia: 0,
+           skipped: [], errors: [], duplicates: [], roots: [] };
+}
+
+async function listSource(src, prefix, report) {
+  const out = [];
+  if (src.kind === 'handle') {
+    const walk = async (dir, rel) => {
+      report.folders++;
+      try {
+        for await (const [name, h] of dir.entries()) {
+          if (h.kind === 'directory') {
+            const why = skipReason(name);
+            if (why) report.skipped.push({ path: prefix + rel + name, why });
+            else await walk(h, rel + name + '/');
+          } else { report.files++; out.push({ path: prefix + rel + name, name, getFile: () => h.getFile() }); }
+        }
+      } catch (e) {  // one unreadable folder never stops the scan
+        report.errors.push({ path: prefix + rel || src.name, msg: 'Could not open folder: ' + (e.message || e.name) });
+      }
+    };
+    await walk(src.handle, '');
+  } else {
+    const dirs = new Set(['']), skipped = new Set();
+    for (const f of src.files) {
+      const parts = (f.webkitRelativePath || f.name).split('/').slice(1);
+      if (!parts.length) parts.push(f.name);
+      let bad = -1;
+      for (let i = 0; i < parts.length - 1; i++) if (skipReason(parts[i])) { bad = i; break; }
+      if (bad >= 0) {
+        const sp = prefix + parts.slice(0, bad + 1).join('/');
+        if (!skipped.has(sp)) { skipped.add(sp); report.skipped.push({ path: sp, why: skipReason(parts[bad]) }); }
+        continue;
+      }
+      for (let i = 1; i < parts.length; i++) dirs.add(parts.slice(0, i).join('/'));
+      report.files++;
+      out.push({ path: prefix + parts.join('/'), name: f.name, getFile: async () => f });
+    }
+    report.folders += dirs.size;
+  }
+  return out;
+}
+
+async function expandZips(entries, report, wantSeq) {
+  const out = [];
+  if (!cfg.look_in_zips) return out;
+  for (const z of entries.filter(e => ext(e.name) === '.zip')) {
+    report.zips++;
+    try {
+      const f = await z.getFile();
+      if (f.size > ZIP_MAX) { report.skipped.push({ path: z.path, why: 'zip larger than 4 GB' }); continue; }
+      const list = await zipListCached(f, `${z.path}|${f.size}|${f.lastModified}`);
+      report.zipOpened++;
+      for (const e of list) {
+        if (e.dir || e.name.split('/').includes('__MACOSX')) continue;
+        const x = ext(e.name), isSeq = wantSeq && SEQ_EXTS.includes(x), isMedia = MEDIA_EXTS.includes(x);
+        if (!isSeq && !isMedia && !(wantSeq && x === '.xml')) continue;
+        const name = baseAny(e.name);
+        out.push({ path: `${z.path}!/${e.name}`, name, inZip: z.path,
+          getFile: async () => new File([await zipRead(await z.getFile(), e)], name, { lastModified: e.date || f.lastModified }) });
+      }
+    } catch (e) { report.errors.push({ path: z.path, msg: 'Could not open zip: ' + e.message }); }
+  }
+  return out;
+}
+
+async function ensurePermission(src) {
+  if (src.kind !== 'handle') return true;
+  if (await src.handle.queryPermission({mode: 'read'}) === 'granted') return true;
+  return (await src.handle.requestPermission({mode: 'read'})) === 'granted';
+}
+
+async function pickFolder() {
+  if (window.showDirectoryPicker) {
+    try {
+      const handle = await window.showDirectoryPicker({id: 'xlc', mode: 'read'});
+      return { kind: 'handle', handle, name: handle.name };
+    } catch (e) {
+      if (e.name === 'AbortError') return null;
+    }
+  }
+  return new Promise(res => {
+    const inp = $('#dirInput'); inp.value = '';
+    inp.onchange = () => {
+      const files = [...inp.files];
+      if (!files.length) return res(null);
+      res({ kind: 'files', files, name: (files[0].webkitRelativePath || '').split('/')[0] || 'Folder' });
+    };
+    inp.click();
+  });
+}
+
+async function rememberFolders() {
+  if (S.show?.kind === 'handle') await idb.set('kv', 'show', S.show.handle); else await idb.del('kv', 'show');
+  await idb.set('kv', 'music', S.music.filter(m => m.kind === 'handle').map(m => m.handle));
+}
+
+// ------------------------------------------------------------------ reading sequences
+const ENT = {amp:'&', lt:'<', gt:'>', quot:'"', apos:"'"};
+const decode = s => s.replace(/&(#x?[0-9a-f]+|\w+);/gi, (m, e) => e[0] === '#'
+  ? String.fromCodePoint(e[1].toLowerCase() === 'x' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10)) : (ENT[e] ?? m));
+
+function parseHead(text) {
+  const m = text.match(/<head\b[^>]*>([\s\S]*?)<\/head>/i);
+  if (!m) return null;
+  const head = {};
+  for (const t of m[1].matchAll(/<([\w:-]+)\b[^>]*?(?:\/>|>([\s\S]*?)<\/\1>)/g))
+    head[t[1].split(':').pop().toLowerCase()] = decode((t[2] || '').replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')).trim();
+  return head;
+}
+async function readHeadFromBlob(blob) {
+  for (let size = 65536; ; size *= 4) {
+    const text = await blob.slice(0, size).text();
+    const head = parseHead(text);
+    if (head) return head;
+    if (size >= blob.size || size >= 8 << 20) {
+      if (!/<xsequence/i.test(text)) throw new Error('not an xLights sequence');
+      return {};
+    }
+  }
+}
+async function isLegacySequence(entry) {
+  try { return /<xsequence\b/i.test(await (await entry.getFile()).slice(0, 4096).text()); } catch { return false; }
+}
+async function readSequence(entry) {
+  const file = await entry.getFile();
+  const key = `${entry.path}|${file.size}|${file.lastModified}`;
+  const base = { entry, key, size: file.size, modified: file.lastModified };
+  const cached = await idb.get('seq', entry.path);
+  if (cached && cached.key === key) return Object.assign(base, cached.data);
+  let data;
+  try {
+    if (ext(entry.name) === '.xsqz') {
+      const list = await zipListCached(file, key);
+      const xsq = list.find(e => !e.dir && e.name.toLowerCase().endsWith('.xsq'));
+      if (!xsq) throw new Error('package contains no .xsq file');
+      data = { head: await readHeadFromBlob(await zipRead(file, xsq)), error: '',
+               packaged: list.filter(e => !e.dir && MEDIA_EXTS.includes(ext(e.name))).map(e => e.name) };
+    } else {
+      data = { head: await readHeadFromBlob(file), packaged: [], error: '' };
+    }
+  } catch (e) {
+    data = { head: {}, packaged: [], error: 'Could not read sequence: ' + (e.message || e) };
+  }
+  await idb.set('seq', entry.path, { key, data });
+  return Object.assign(base, data);
+}
+
+// ------------------------------------------------------------------ songs: index, matching, tags
+function buildIndex(entries) {
+  const idx = { byName: new Map(), byNorm: new Map(), byPath: new Map(), all: entries, count: 0 };
+  for (const e of entries) {
+    idx.count++;
+    const push = (m, k) => { if (!k) return; if (!m.has(k)) m.set(k, []); m.get(k).push(e); };
+    push(idx.byName, e.name.toLowerCase());
+    push(idx.byNorm, normName(e.name));
+    idx.byPath.set(e.path.toLowerCase(), e);
+  }
+  idx.normKeys = [...idx.byNorm.keys()];
+  idx.fuzzy = (name, cutoff) => {
+    const n = normName(name);
+    if (n.length < 4) return null;
+    if (idx.byNorm.has(n)) return idx.byNorm.get(n)[0];
+    let best = null, score = cutoff;
+    for (const k of idx.normKeys) {
+      if (2 * Math.min(k.length, n.length) / (k.length + n.length) < score) continue;
+      const s = similarity(n, k);
+      if (s >= score) { score = s; best = k; }
+    }
+    return best ? idx.byNorm.get(best)[0] : null;
+  };
+  return idx;
+}
+
+function resolveMedia(seq, idx) {
+  const head = seq.head, raw = head.mediafile || '', base = baseAny(raw), rel = seq.entry.path;
+  const stype = (head.sequencetype || '').toLowerCase();
+  const exempt = globMatch(rel, cfg.no_audio_expected) || globMatch(seq.entry.name, cfg.no_audio_expected);
+  const res = { media_raw: raw, media_path: '', media_status: 'missing', media_note: '', media_in_package: false, _media: null };
+  const found = (m, status = 'ok', note = '') => {
+    if (status === 'guess' && exempt) return Object.assign(res, { media_status: 'exempt', media_note: 'Marked as not needing a song' });
+    return Object.assign(res, { media_path: m.path, media_status: status, media_note: note, _media: m });
+  };
+  const pkg = n => ({ path: n, name: baseAny(n), packaged: true });
+  if (raw) {
+    const inPkg = seq.packaged.find(m => baseAny(m).toLowerCase() === base.toLowerCase());
+    if (inPkg) { res.media_in_package = true; return found(pkg(inPkg), 'ok', 'Song is packaged inside the .xsqz'); }
+    if (!/^([a-z]:)?[\\/]/i.test(raw)) {
+      for (const cand of [joinPath(dirOf(rel), raw), joinPath('', raw)]) {
+        const hit = idx.byPath.get(cand.toLowerCase()); if (hit) return found(hit);
+      }
+    }
+    const exact = idx.byName.get(base.toLowerCase());
+    if (exact) {  // prefer a copy next to the sequence (e.g. inside the same zip)
+      const near = exact.find(e => dirOf(e.path) === dirOf(rel)) || exact.find(e => seq.entry.inZip && e.inZip === seq.entry.inZip) || exact[0];
+      return found(near);
+    }
+    const near = idx.fuzzy(base, 0.82);
+    if (near) return found(near, 'guess', `Sequence expects '${base}'; closest match by name`);
+  }
+  if (seq.packaged.length && !raw) { res.media_in_package = true; return found(pkg(seq.packaged[0]), 'ok', 'Song is packaged inside the .xsqz'); }
+  const hit = idx.fuzzy(seq.entry.name, 0.86);
+  if (exempt) return Object.assign(res, { media_status: 'exempt', media_note: 'Marked as not needing a song' });
+  if (!raw && stype === 'animation' && cfg.animation_needs_no_song) return Object.assign(res, { media_status: 'exempt', media_note: 'Animation sequence (no song by design)' });
+  if (hit) return found(hit, 'guess', raw ? `Sequence expects '${base}' (not found); suggested by sequence name` : 'No song set in the sequence; suggested by sequence name');
+  res.media_note = seq.error || (raw ? `Song file not found: ${base}` : 'No song set in the sequence');
+  return res;
+}
+
+function readTags(blob) {
+  return new Promise(res => {
+    try { window.jsmediatags.read(blob, { onSuccess: t => res(t.tags || {}), onError: () => res({}) }); }
+    catch { res({}); }
+  });
+}
+async function thumbnail(blob) {
+  try {
+    const bmp = await createImageBitmap(blob);
+    const k = Math.min(1, 360 / Math.max(bmp.width, bmp.height));
+    const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height); bmp.close?.();
+    return c.toDataURL('image/jpeg', 0.82);
+  } catch { return ''; }
+}
+function mediaDuration(blob) {
+  return new Promise(res => {
+    const a = document.createElement('audio'), url = URL.createObjectURL(blob);
+    let done = false; const fin = v => { if (done) return; done = true; URL.revokeObjectURL(url); res(v); };
+    a.preload = 'metadata'; a.onloadedmetadata = () => fin(isFinite(a.duration) ? a.duration : 0);
+    a.onerror = () => fin(0); setTimeout(() => fin(0), 8000); a.src = url;
+  });
+}
+const mimeFor = n => ({'.m4a':'audio/mp4','.mp4':'video/mp4','.aac':'audio/aac','.wav':'audio/wav','.ogg':'audio/ogg','.flac':'audio/flac','.opus':'audio/ogg'}[ext(n)] || 'audio/mpeg');
+// Song details for a media entry or a song packaged inside an .xsqz; cached across scans.
+async function audioMeta(seq, media, needDuration) {
+  let blob, key;
+  if (media.packaged) key = `${seq.entry.path}::${media.path}|${seq.key}`;
+  else { const f = await media.getFile(); blob = f; key = `${media.path}|${f.size}|${f.lastModified}`; }
+  let m = await idb.get('audio', key);
+  if (m && (m.duration || !needDuration)) return m;
+  if (media.packaged) {
+    const f = await seq.entry.getFile(), list = await zipListCached(f, seq.key);
+    const e = list.find(x => x.name === media.path);
+    blob = new Blob([await zipRead(f, e)], { type: mimeFor(media.path) });
+  } else if (!blob.type) blob = new Blob([blob], { type: mimeFor(media.name) });
+  if (!m) {
+    await loadScript(LIBS.tags);
+    const t = await readTags(blob);
+    let art = '';
+    if (t.picture?.data) art = await thumbnail(new Blob([new Uint8Array(t.picture.data)], { type: t.picture.format || 'image/jpeg' }));
+    m = { title: t.title || '', artist: t.artist || t.TPE2?.data || '', album: t.album || '', duration: 0, art };
+  }
+  if (needDuration && !m.duration) m.duration = await mediaDuration(blob);
+  await idb.set('audio', key, m);
+  return m;
+}
+function itunesSearch(term, limit = 1) {
+  return new Promise(res => {
+    const cb = 'xlc' + Math.random().toString(36).slice(2), s = document.createElement('script');
+    let done = false; const fin = v => { if (done) return; done = true; delete window[cb]; s.remove(); res(v); };
+    window[cb] = d => fin(d?.results || []);
+    s.onerror = () => fin([]); setTimeout(() => fin([]), 8000);
+    s.src = `https://itunes.apple.com/search?term=${encodeURIComponent(term.trim())}&entity=song&limit=${limit}&callback=${cb}`;
+    document.head.appendChild(s);
+  });
+}
+const bigArt = u => u ? u.replace('100x100bb', '600x600bb') : '';
+
+function resolveVendor(head, rel) {
+  const author = head.author || '', email = head['author-email'] || '', site = head['author-website'] || '';
+  for (const rule of cfg.vendors) if ([author, email, site, rel].some(f => f && globMatch(f, rule.match || []))) return [rule.name, 'rule'];
+  if (author) return [author, 'author'];
+  if (site) { try { return [new URL(/:\/\//.test(site) ? site : 'http://' + site).hostname.replace(/^www\./, ''), 'website']; } catch { return [site, 'website']; } }
+  if (email.includes('@')) return [email.split('@')[1], 'email'];
+  if (cfg.vendor_from_folder && rel.includes('/')) return [rel.split('/')[0], 'folder'];
+  return ['Unknown vendor', 'none'];
+}
+
+// ------------------------------------------------------------------ scanning
+let busy = false;
+function progress(frac, text) {
+  const p = $('#progress'); p.hidden = frac == null;
+  if (frac != null) { $('#pFill').style.width = Math.round(frac * 100) + '%'; $('#pText').textContent = text; }
+  $('#string').classList.toggle('busy', frac != null);
+}
+
+function buildTree(entries) {
+  const tree = new Map();
+  const node = p => { if (!tree.has(p)) tree.set(p, { dirs: new Set(), files: [] }); return tree.get(p); };
+  node('');
+  for (const e of entries) {
+    const parts = e.path.split('/');
+    for (let i = 0; i < parts.length - 1; i++) node(parts.slice(0, i).join('/')).dirs.add(parts[i]);
+    node(parts.slice(0, -1).join('/')).files.push(parts[parts.length - 1]);
+  }
+  return tree;
+}
+
+async function scan() {
+  if (busy || !S.show) return;
+  busy = true; setButtons(false);
+  try {
+    if (!(await ensurePermission(S.show))) throw new Error('Permission to read the show folder was not given.');
+    for (const m of S.music) await ensurePermission(m);
+    const report = newReport();
+    progress(0.01, `Looking through every folder in ${S.show.name}…`);
+    const showFiles = await listSource(S.show, '', report);
+    report.roots.push(S.show.name);
+    const musicFiles = [];
+    for (const m of S.music) {
+      if (m.kind === 'handle' && (await m.handle.queryPermission({mode: 'read'})) !== 'granted') {
+        report.errors.push({ path: m.name, msg: 'Permission to read this music folder was not given' }); continue;
+      }
+      progress(0.03, `Looking through every folder in ${m.name}…`);
+      musicFiles.push(...await listSource(m, `music:${m.name}/`, report));
+      report.roots.push(m.name);
+    }
+    progress(0.05, 'Opening zip files…');
+    const zipped = [...await expandZips(showFiles, report, true), ...await expandZips(musicFiles, report, false)];
+    const all = [...showFiles, ...musicFiles, ...zipped];
+    S.tree = buildTree(all);
+
+    // songs: every media file anywhere
+    const media = all.filter(e => MEDIA_EXTS.includes(ext(e.name)));
+    report.media = media.filter(e => !e.inZip).length; report.zipMedia = media.filter(e => e.inZip).length;
+
+    // sequences: .xsq/.xsqz, plus older .xml sequences (checked by content)
+    const candidates = [...showFiles, ...zipped.filter(e => !e.path.startsWith('music:'))];
+    const seqFiles = candidates.filter(e => SEQ_EXTS.includes(ext(e.name)));
+    const xmls = candidates.filter(e => ext(e.name) === '.xml' && !/^xlights_(rgbeffects|networks|keybindings)/i.test(e.name));
+    let checked = 0;
+    for (const x of await pool(xmls, 8, async e => { const ok = await isLegacySequence(e); if (++checked % 20 === 0) progress(0.06, `Checking ${checked} of ${xmls.length} .xml files for older sequences…`); return ok ? e : null; }))
+      if (x) { x.legacy = true; seqFiles.push(x); }
+    // zipped copies of sequences that are already unzipped are duplicates
+    const outside = new Set(seqFiles.filter(e => !e.inZip).map(e => e.name.toLowerCase()));
+    const finalSeq = seqFiles.filter(e => {
+      if (e.inZip && outside.has(e.name.toLowerCase())) { report.duplicates.push(e.path); return false; }
+      return true;
+    }).sort((a, b) => a.path.localeCompare(b.path));
+    for (const e of finalSeq) {
+      if (e.inZip) report.zipSeq++; else if (e.legacy) report.legacy++; else if (ext(e.name) === '.xsqz') report.xsqz++; else report.seq++;
+    }
+    S.report = report;
+    S.index = buildIndex(media); S.tagIndex = new Map(); S.tagJob = null;
+    zipLists.clear();
+    let done = 0;
+    S.seqs = await pool(finalSeq, 8, async e => {
+      const r = await readSequence(e);
+      done++; if (done % 5 === 0 || done === finalSeq.length) progress(0.08 + 0.42 * done / finalSeq.length, `Reading sequences: ${done} of ${finalSeq.length}`);
+      return r;
+    });
+    await assemble(true);
+    setTimeout(() => startTagIndex(), 800);  // read song tags quietly in the background for searching
+    toast(`Scanned ${fmtN(report.folders)} folders and ${fmtN(report.files)} files`);
+  } catch (e) {
+    showError(e.message || String(e));
+  } finally {
+    busy = false; progress(null); setButtons(true);
+  }
+}
+
+// Turn parsed sequences into catalogue records. Re-run cheaply when settings or suggestions change.
+async function assemble(withProgress) {
+  const seqs = S.seqs, total = seqs.length; let done = 0;
+  const records = await pool(seqs, 6, async seq => {
+    const head = seq.head, rel = seq.entry.path, ov = cfg.overrides[rel] || {};
+    const ai = [];
+    let media = resolveMedia(seq, S.index);
+    const mine = ov.media_by === 'you';
+    if (ov.media) {
+      const e = S.index.byPath.get(ov.media.toLowerCase());
+      if (e) { media = { media_raw: media.media_raw, media_path: e.path, media_status: 'ok', media_note: mine ? 'Chosen by you' : 'Matched by Claude' + (ov.media_reason ? ': ' + ov.media_reason : ''), media_in_package: false, _media: e }; if (!mine) ai.push('song'); }
+      else media.media_note = `${mine ? 'The song you chose' : "Claude's match"} (${ov.media}) is no longer there. ` + media.media_note;
+    }
+    let linked = null;
+    if (ov.linked && media.media_status !== 'ok') {
+      linked = ov.linked;
+      media = { media_raw: media.media_raw, media_path: linked.name, media_status: 'ok', media_note: 'Chosen from your computer but not in your show folder. Copy it there so xLights can play it.', media_in_package: false, _media: null };
+    }
+    if (ov.no_song && media.media_status !== 'ok') { Object.assign(media, { media_status: 'exempt', media_note: 'Claude: ' + (ov.no_song_reason || 'no song needed'), media_path: '', _media: null }); ai.push('no song'); }
+    let am = { title: '', artist: '', album: '', duration: 0, art: '' };
+    const seqDur = parseFloat(head.sequenceduration) || 0;
+    if (media._media) { try { am = await audioMeta(seq, media._media, !seqDur); } catch {} }
+    if (linked) am = { title: linked.title, artist: linked.artist, album: linked.album, duration: linked.duration, art: linked.art };
+    const audioDur = am.duration || 0;
+    delete media._media;
+    let [vendor, vsrc] = resolveVendor(head, rel);
+    if (ov.vendor) { vendor = ov.vendor; vsrc = 'claude'; ai.push('vendor'); }
+    const [fa, ft] = splitArtistTitle(stemOf(seq.entry.name));
+    if (ov.title || ov.artist || ov.album) ai.push('details');
+    let art = am.art, artSrc = am.art ? 'embedded' : '';
+    if (ov.art_url) { art = ov.art_url; artSrc = 'claude'; ai.push('album art'); }
+    done++; if (withProgress && (done % 5 === 0 || done === total)) progress(0.5 + 0.45 * done / total, `Matching songs and album art: ${done} of ${total}`);
+    return {
+      id: hash(rel).slice(0, 12),
+      title: ov.title || head.song || am.title || ft || cleanTitle(stemOf(seq.entry.name)),
+      artist: ov.artist || head.artist || am.artist || fa, album: ov.album || head.album || am.album,
+      vendor, vendor_source: vsrc, author: head.author || '', author_email: head['author-email'] || '',
+      author_website: head['author-website'] || '', duration: Math.round((seqDur || audioDur || 0) * 100) / 100,
+      song_duration: Math.round(audioDur * 100) / 100,
+      timing: head.sequencetiming || '', seq_type: head.sequencetype || '', xlights_version: head.version || '',
+      music_url: head.musicurl || '', comment: head.comment || '', file_name: seq.entry.name, rel_path: rel,
+      abs_path: `${S.show.name}/${rel}`, folder: dirOf(rel), packaged: ext(seq.entry.name) === '.xsqz',
+      in_zip: seq.entry.inZip || '', legacy: !!seq.entry.legacy,
+      size: seq.size, modified: new Date(seq.modified - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 19),
+      _art: art, art: '', art_source: artSrc, error: seq.error, ai, ...media,
+    };
+  });
+  if (cfg.fetch_online_art) {
+    const need = records.filter(r => !r._art && r.title);
+    for (let i = 0; i < need.length; i++) {
+      const r = need[i], k = `${r.artist}|${r.title}`.toLowerCase();
+      let url = await idb.get('online', k);
+      if (url === undefined) { url = bigArt((await itunesSearch(`${r.artist} ${r.title}`))[0]?.artworkUrl100); await idb.set('online', k, url); await sleep(250); }
+      if (url) { r._art = url; r.art_source = 'online'; }
+      if (withProgress) progress(0.95 + 0.05 * (i + 1) / need.length, `Looking up album art online: ${i + 1} of ${need.length}`);
+    }
+  }
+  const art = {};
+  for (const r of records) { if (r._art) { const k = hash(r._art); art[k] = r._art; r.art = k; } delete r._art; }
+  const count = s => records.filter(r => r.media_status === s).length;
+  const rep = S.report || {};
+  const catalog = {
+    generated: new Date().toISOString(), root: S.show.name, version: VERSION,
+    stats: { sequences: records.length, vendors: new Set(records.map(r => r.vendor)).size,
+      artists: new Set(records.map(r => r.artist).filter(Boolean)).size,
+      total_duration: Math.round(records.reduce((a, r) => a + r.duration, 0) * 10) / 10,
+      media_files: S.index.count, with_art: records.filter(r => r.art).length,
+      folders: rep.folders || 0, files: rep.files || 0,
+      ok: count('ok'), guess: count('guess'), missing: count('missing'), exempt: count('exempt') },
+    report: S.report ? { ...S.report } : null,
+    sequences: records, art,
+  };
+  await idb.set('kv', 'catalog', catalog);
+  show(catalog);
+}
+
+// ------------------------------------------------------------------ exports
+function withoutArt(c) { const { art, ...rest } = c; return rest; }
+function csvText(c) {
+  const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const rows = [['status','sequence','title','artist','vendor','expected song','matched song','note','song link']];
+  for (const r of c.sequences) if (r.media_status === 'missing' || r.media_status === 'guess')
+    rows.push([r.media_status, r.rel_path, r.title, r.artist, r.vendor, baseAny(r.media_raw), r.media_path, r.media_note, r.music_url]);
+  return rows.map(r => r.map(q).join(',')).join('\r\n');
+}
+function standaloneHtml(c) {
+  const tag = '<script id="catalog-data" type="application/json">';
+  const i = PRISTINE.indexOf(tag) + tag.length, j = PRISTINE.indexOf('</' + 'script>', i);
+  return PRISTINE.slice(0, i) + JSON.stringify(c).replace(/<\//g, '<\\/') + PRISTINE.slice(j);
+}
+
+// ------------------------------------------------------------------ Claude agent
+const AI = { running: false, abort: null, tokens: 0, artUrls: new Set(), runRules: [], log: [] };
+const apiKey = () => sessionStorage.getItem('xlc-key') || store.get('apikey', '');
+
+const AI_SYSTEM = `You help organise a Christmas / holiday light show built with xLights. You are working on a catalogue of xLights sequences (.xsq files, .xsqz packages, some inside vendor .zip downloads). The app has already walked every folder and matched what it could with simple rules. You handle the cases those rules could not settle.
+
+Each sequence you receive lists the tasks to do for it:
+- "song": find the audio file this sequence was made for. Search with find_audio using the expected file name, the song title, and the artist. Candidates can be anywhere, including inside zip files (paths containing "!/"). Confirm with read_audio_tags: matching title/artist tags and a song length within about 3 seconds of the sequence length is strong evidence (sequences are usually exactly as long as their song, sometimes a few seconds longer). Different versions of the same song (radio edit, live, remix) have different lengths, so length is the best tie-breaker. Use list_folder to look around the sequence's own folder. If the sequence is clearly an intro, countdown, announcement, loop or animation that would not have a song, use propose_no_song. If you cannot find a convincing match, do not guess: leave it and mention it in finish.
+- "vendor": work out the business that sold the sequence. The author, email domain, website and folder names are clues. Use web search (if available) to confirm the vendor's proper business name. Prefer propose_vendor_rule with patterns like "*domain.com*" or "Vendors/Name/*" so that every sequence from that vendor is covered, and reuse an existing vendor name exactly when it is the same company. Use propose_vendor only for one-off cases.
+- "details": fill in a missing artist (and fix an obviously wrong title) from audio tags, the file name, or a web search. Only propose values you are confident about.
+- "art": find album art with search_album_art and propose an image whose artist and title match. Prefer the original studio release. Skip if nothing matches well.
+
+Rules:
+- Only use file paths returned by your tools, and only image URLs returned by search_album_art. Never invent them.
+- Confidence is 0 to 1: 0.9+ means you verified it (e.g. tags and length match), 0.6 to 0.9 means likely, below 0.6 do not propose.
+- Keep reasons short and specific, e.g. "Title and artist tags match; song 3:05 vs sequence 3:05".
+- Be efficient: batch your thinking, avoid repeating searches, and call finish once every sequence in the batch has been handled.`;
+
+const AI_TOOLS = [
+  { name: 'get_sequence', description: 'Full details of a sequence in the catalogue by id.', input_schema: { type: 'object', properties: { sequence_id: { type: 'string' } }, required: ['sequence_id'] } },
+  { name: 'list_folder', description: 'List sub-folders and files in a folder. "" is the show folder; music folders start with "music:"; zip contents appear under "name.zip!".', input_schema: { type: 'object', properties: { path: { type: 'string' }, offset: { type: 'integer' } }, required: ['path'] } },
+  { name: 'find_audio', description: 'Search every song/video file (including inside zips) by file name and by title/artist tags. Returns best matches with their tags, length and a 0-1 score.', input_schema: { type: 'object', properties: { query: { type: 'string' }, limit: { type: 'integer', description: 'default 10, max 25' } }, required: ['query'] } },
+  { name: 'read_audio_tags', description: 'Read title, artist, album, length and whether it has cover art, for one audio file path from find_audio or list_folder.', input_schema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } },
+  { name: 'search_album_art', description: 'Search Apple Music for a song. Returns up to 5 releases with artist, title, album, year and image_url.', input_schema: { type: 'object', properties: { artist: { type: 'string' }, title: { type: 'string' } }, required: ['title'] } },
+  { name: 'propose_song', description: 'Suggest the audio file for a sequence.', input_schema: { type: 'object', properties: { sequence_id: { type: 'string' }, audio_path: { type: 'string' }, confidence: { type: 'number' }, reason: { type: 'string' } }, required: ['sequence_id', 'audio_path', 'confidence', 'reason'] } },
+  { name: 'propose_no_song', description: 'Suggest that a sequence intentionally has no song (intro, countdown, loop, animation).', input_schema: { type: 'object', properties: { sequence_id: { type: 'string' }, confidence: { type: 'number' }, reason: { type: 'string' } }, required: ['sequence_id', 'confidence', 'reason'] } },
+  { name: 'propose_details', description: 'Suggest a corrected title, artist and/or album for a sequence.', input_schema: { type: 'object', properties: { sequence_id: { type: 'string' }, title: { type: 'string' }, artist: { type: 'string' }, album: { type: 'string' }, confidence: { type: 'number' }, reason: { type: 'string' } }, required: ['sequence_id', 'confidence', 'reason'] } },
+  { name: 'propose_vendor', description: 'Suggest the vendor for specific sequences.', input_schema: { type: 'object', properties: { sequence_ids: { type: 'array', items: { type: 'string' } }, vendor: { type: 'string' }, confidence: { type: 'number' }, reason: { type: 'string' } }, required: ['sequence_ids', 'vendor', 'confidence', 'reason'] } },
+  { name: 'propose_vendor_rule', description: 'Suggest a vendor rule: glob patterns checked against author, email, website and path of every sequence. Patterns must be specific (e.g. "*acmepixel.com*", "Vendors/Acme/*").', input_schema: { type: 'object', properties: { vendor: { type: 'string' }, patterns: { type: 'array', items: { type: 'string' } }, confidence: { type: 'number' }, reason: { type: 'string' } }, required: ['vendor', 'patterns', 'confidence', 'reason'] } },
+  { name: 'propose_album_art', description: 'Suggest album art for a sequence, using an image_url from search_album_art.', input_schema: { type: 'object', properties: { sequence_id: { type: 'string' }, image_url: { type: 'string' }, confidence: { type: 'number' }, reason: { type: 'string' } }, required: ['sequence_id', 'image_url', 'confidence', 'reason'] } },
+  { name: 'finish', description: 'Call once every sequence in this batch has been handled.', input_schema: { type: 'object', properties: { summary: { type: 'string' }, unresolved: { type: 'array', items: { type: 'object', properties: { sequence_id: { type: 'string' }, why: { type: 'string' } } } } }, required: ['summary'] } },
+];
+
+function startTagIndex() {
+  if (S.tagJob) return S.tagJob;
+  S.tagIndex ||= new Map();
+  S.tagJob = pool(S.index.all.filter(e => !S.tagIndex.has(e.path)), 3, async e => {
+    try { S.tagIndex.set(e.path, await audioMeta(null, e, true)); } catch {}
+  });
+  return S.tagJob;
+}
+async function tagIndex() {
+  if (!S.tagJob || S.tagIndex.size < S.index.count) aiLog(`Reading the tags of ${fmtN(S.index.count)} song files so they can be searched by title and artist (only slow the first time)…`);
+  await startTagIndex(); return S.tagIndex;
+}
+// Score every song file against one or more queries using its file name, path and (when known) its tags.
+function searchAudio(queries, limit) {
+  const qs = queries.map(q => String(q || '').trim()).filter(Boolean).map(q => ({ nq: normName(q + '.x'), words: q.toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 1) }));
+  if (!qs.length || !S.index) return [];
+  const tags = S.tagIndex || new Map();
+  return S.index.all.map(e => {
+    const t = tags.get(e.path) || {}, hay = `${e.path} ${t.title || ''} ${t.artist || ''}`.toLowerCase(), nn = normName(e.name);
+    let s = 0;
+    for (const { nq, words } of qs) {
+      const wHit = words.length ? words.filter(w => hay.includes(w)).length / words.length : 0;
+      const sim = Math.max(similarity(nq, nn), t.title ? similarity(nq, normName(t.title + '.x')) : 0, t.title ? similarity(nq, normName(`${t.artist || ''} ${t.title}.x`)) : 0);
+      s = Math.max(s, 0.55 * sim + 0.45 * wHit);
+    }
+    return { e, t, s };
+  }).filter(x => x.s > 0.3).sort((a, b) => b.s - a.s).slice(0, limit);
+}
+function recById(id) { return S.catalog?.sequences.find(r => r.id === id); }
+const mmssS = s => s ? `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}` : 'unknown';
+function seqInfo(r) {
+  return { id: r.id, file: r.rel_path, in_zip: r.in_zip || undefined, title: r.title, artist: r.artist || null, album: r.album || null,
+    vendor: r.vendor, vendor_from: r.vendor_source, author: r.author || null, author_email: r.author_email || null, author_website: r.author_website || null,
+    song_link: r.music_url || null, notes: r.comment || null, sequence_type: r.seq_type || null,
+    sequence_length: r.duration ? `${mmssS(r.duration)} (${r.duration}s)` : 'unknown',
+    expected_song_file: r.media_raw || null, song_status: r.media_status, current_song: r.media_path || null,
+    current_song_length: r.song_duration ? `${mmssS(r.song_duration)} (${r.song_duration}s)` : null, note: r.media_note || null, has_album_art: !!r.art };
+}
+function vendorRuleMatches(patterns) {
+  return S.catalog.sequences.filter(r => [r.author, r.author_email, r.author_website, r.rel_path].some(f => f && globMatch(f, patterns)));
+}
+function tasksFor(r) {
+  const t = [], ov = cfg.overrides[r.rel_path] || {}, want = cfg.ai_tasks;
+  if (want.song && (r.media_status === 'missing' || r.media_status === 'guess') && !ov.media && !ov.no_song && !ov.linked) t.push('song');
+  if (want.vendor && ['none', 'website', 'email'].includes(r.vendor_source) && !ov.vendor
+      && !AI.runRules.some(p => [r.author, r.author_email, r.author_website, r.rel_path].some(f => f && globMatch(f, p)))) t.push('vendor');
+  if (want.details && !r.artist && !ov.artist) t.push('details');
+  if (want.art && !r.art && !ov.art_url) t.push('art');
+  return t;
+}
+function taskCounts() {
+  const c = { song: 0, vendor: 0, details: 0, art: 0 }, saved = cfg.ai_tasks;
+  cfg.ai_tasks = { song: true, vendor: true, details: true, art: true };
+  for (const r of S.catalog?.sequences || []) for (const t of tasksFor(r)) c[t]++;
+  cfg.ai_tasks = saved; return c;
+}
+
+function aiLog(text, cls = '') {
+  const li = document.createElement('li'); li.textContent = text; if (cls) li.className = cls;
+  const log = $('#aiLog'); log.hidden = false; log.appendChild(li); log.scrollTop = log.scrollHeight;
+}
+function aiMeter(text) { $('#aiMeter').textContent = text; }
+
+async function callClaude(body, signal) {
+  for (let attempt = 0; ; attempt++) {
+    const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', signal,
+      headers: { 'content-type': 'application/json', 'x-api-key': apiKey(), 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+      body: JSON.stringify(body) });
+    if (r.ok) return r.json();
+    const j = await r.json().catch(() => ({})), msg = j.error?.message || `Anthropic API error ${r.status}`;
+    if ((r.status === 429 || r.status === 529 || r.status >= 500) && attempt < 5) {
+      aiLog(`Anthropic is busy; waiting and retrying (${attempt + 1})…`);
+      await sleep(Math.min(60000, 3000 * 2 ** attempt)); continue;
+    }
+    if (r.status === 401) throw new Error('Your Anthropic API key was not accepted. Check it and try again.');
+    const e = new Error(msg); e.status = r.status; throw e;
+  }
+}
+
+function addProposal(p) {
+  p.id = hash(JSON.stringify([p.type, p.seq_ids, p.data]) + Date.now()).slice(0, 10);
+  p.status = 'pending'; p.created = Date.now();
+  S.proposals.push(p);
+  return p;
+}
+async function saveProposals() { await idb.set('kv', 'proposals', S.proposals); updateReviewButton(); }
+
+async function runTool(name, input, batchIds) {
+  const needSeq = id => { const r = recById(id); if (!r) throw new Error(`Unknown sequence_id "${id}"`); return r; };
+  const conf = c => { const v = Number(c); if (!(v >= 0 && v <= 1)) throw new Error('confidence must be between 0 and 1'); if (v < 0.6) throw new Error('confidence below 0.6: do not propose, mention it in finish instead'); return v; };
+  switch (name) {
+    case 'get_sequence': return seqInfo(needSeq(input.sequence_id));
+    case 'list_folder': {
+      const path = String(input.path || '').replace(/\/+$/, ''), n = S.tree.get(path);
+      if (!n) return { error: `No folder "${path}". Use "" for the show folder.` };
+      const off = Math.max(0, input.offset | 0), dirs = [...n.dirs].sort(), files = [...n.files].sort();
+      const items = [...dirs.map(d => d + '/'), ...files];
+      return { path, total: items.length, offset: off, items: items.slice(off, off + 150), more: items.length > off + 150 ? `call again with offset ${off + 150}` : undefined };
+    }
+    case 'find_audio': {
+      await tagIndex();
+      const res = searchAudio([String(input.query || '')], Math.min(25, Math.max(1, input.limit || 10)));
+      return { results: res.map(x => ({ path: x.e.path, title: x.t.title || undefined, artist: x.t.artist || undefined,
+        length: x.t.duration ? mmssS(x.t.duration) : undefined, score: Math.round(x.s * 100) / 100 })), searched: S.index.count };
+    }
+    case 'read_audio_tags': {
+      const e = S.index.byPath.get(String(input.path || '').toLowerCase());
+      if (!e) return { error: 'No audio file at that path. Use a path from find_audio or list_folder.' };
+      const m = await audioMeta(null, e, true);
+      return { path: e.path, title: m.title || null, artist: m.artist || null, album: m.album || null,
+        length: m.duration ? `${mmssS(m.duration)} (${Math.round(m.duration * 100) / 100}s)` : 'unknown', has_cover_art: !!m.art };
+    }
+    case 'search_album_art': {
+      const res = await itunesSearch(`${input.artist || ''} ${input.title}`, 5);
+      const out = res.map(x => ({ artist: x.artistName, title: x.trackName, album: x.collectionName, year: (x.releaseDate || '').slice(0, 4), image_url: bigArt(x.artworkUrl100) })).filter(x => x.image_url);
+      out.forEach(x => AI.artUrls.add(x.image_url));
+      return out.length ? { results: out } : { results: [], note: 'No results. Try a simpler title or without the artist.' };
+    }
+    case 'propose_song': {
+      const r = needSeq(input.sequence_id), e = S.index.byPath.get(String(input.audio_path || '').toLowerCase());
+      if (!e) throw new Error('audio_path not found; use a path returned by find_audio or list_folder');
+      addProposal({ type: 'song', seq_ids: [r.id], data: { path: e.path }, confidence: conf(input.confidence), reason: input.reason });
+      aiLog(`Suggested a song for ${r.title}: ${e.name}`, 'me'); return { ok: true };
+    }
+    case 'propose_no_song': {
+      const r = needSeq(input.sequence_id);
+      addProposal({ type: 'no_song', seq_ids: [r.id], data: {}, confidence: conf(input.confidence), reason: input.reason });
+      aiLog(`Suggested ${r.title} doesn't need a song`, 'me'); return { ok: true };
+    }
+    case 'propose_details': {
+      const r = needSeq(input.sequence_id), data = {};
+      for (const k of ['title', 'artist', 'album']) if (input[k] && String(input[k]).trim()) data[k] = String(input[k]).trim();
+      if (!Object.keys(data).length) throw new Error('give at least one of title, artist, album');
+      addProposal({ type: 'details', seq_ids: [r.id], data, confidence: conf(input.confidence), reason: input.reason });
+      aiLog(`Suggested details for ${r.title}: ${Object.values(data).join(', ')}`, 'me'); return { ok: true };
+    }
+    case 'propose_vendor': {
+      const ids = (input.sequence_ids || []).map(id => needSeq(id).id), v = String(input.vendor || '').trim();
+      if (!ids.length || !v) throw new Error('need sequence_ids and vendor');
+      addProposal({ type: 'vendor', seq_ids: ids, data: { vendor: v }, confidence: conf(input.confidence), reason: input.reason });
+      aiLog(`Suggested vendor ${v} for ${ids.length} sequence${ids.length > 1 ? 's' : ''}`, 'me'); return { ok: true };
+    }
+    case 'propose_vendor_rule': {
+      const v = String(input.vendor || '').trim(), pats = (input.patterns || []).map(p => String(p).trim()).filter(Boolean);
+      const weak = pats.find(p => p.replace(/[*?]/g, '').length < 4);
+      if (!v || !pats.length) throw new Error('need vendor and patterns');
+      if (weak) throw new Error(`pattern "${weak}" is too broad`);
+      const hits = vendorRuleMatches(pats);
+      if (!hits.length) throw new Error('these patterns match no sequences');
+      const c = conf(input.confidence);
+      addProposal({ type: 'vendor_rule', seq_ids: hits.map(r => r.id), data: { vendor: v, patterns: pats }, confidence: c, reason: input.reason });
+      AI.runRules.push(pats);
+      aiLog(`Suggested vendor ${v} for ${hits.length} sequence${hits.length > 1 ? 's' : ''} (${pats.join(', ')})`, 'me');
+      return { ok: true, matches: hits.length };
+    }
+    case 'propose_album_art': {
+      const r = needSeq(input.sequence_id), u = String(input.image_url || '');
+      if (!AI.artUrls.has(u)) throw new Error('image_url must come from search_album_art');
+      addProposal({ type: 'art', seq_ids: [r.id], data: { url: u }, confidence: conf(input.confidence), reason: input.reason });
+      aiLog(`Suggested album art for ${r.title}`, 'me'); return { ok: true };
+    }
+    case 'finish': return { ok: true };
+  }
+  return { error: `Unknown tool ${name}` };
+}
+function describeCall(name, input) {
+  const q = s => `"${String(s || '').slice(0, 60)}"`;
+  return ({
+    get_sequence: () => `Reading sequence details`,
+    list_folder: () => `Looking in ${input.path ? input.path : 'the show folder'}`,
+    find_audio: () => `Searching your songs for ${q(input.query)}`,
+    read_audio_tags: () => `Checking ${baseAny(input.path)}`,
+    search_album_art: () => `Looking for album art: ${[input.artist, input.title].filter(Boolean).join(', ')}`,
+  }[name] || (() => ''))();
+}
+
+async function runBatch(batch, n, of) {
+  const vendorsInUse = [...new Set(S.catalog.sequences.filter(r => ['rule', 'author', 'claude'].includes(r.vendor_source)).map(r => r.vendor)),
+    ...S.proposals.filter(p => p.type.startsWith('vendor') && p.status !== 'rejected').map(p => p.data.vendor)];
+  const payload = batch.map(({ r, tasks }) => ({ tasks, ...seqInfo(r) }));
+  const messages = [{ role: 'user', content:
+    `Batch ${n} of ${of}. Show folder: "${S.show.name}". Music folders: ${S.music.map(m => `"music:${m.name}"`).join(', ') || 'none'}. `
+    + `${fmtN(S.index.count)} song/video files are indexed.\n`
+    + `Vendor names already in use: ${JSON.stringify([...new Set(vendorsInUse)].slice(0, 80))}\n\n`
+    + `<sequences>\n${JSON.stringify(payload, null, 1)}\n</sequences>` }];
+  const custom = AI_TOOLS.map((t, i) => i === AI_TOOLS.length - 1 ? { ...t, cache_control: { type: 'ephemeral' } } : t);
+  const tools = cfg.ai_web && !AI.noWeb ? [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }, ...custom] : custom;
+  const batchIds = new Set(batch.map(b => b.r.id));
+  for (let turn = 0; turn < 16; turn++) {
+    let resp;
+    try {
+      resp = await callClaude({ model: cfg.ai_model, max_tokens: 4096, system: [{ type: 'text', text: AI_SYSTEM, cache_control: { type: 'ephemeral' } }], tools, messages }, AI.abort.signal);
+    } catch (e) {
+      if (e.status === 400 && /web.?search/i.test(e.message) && !AI.noWeb) {
+        AI.noWeb = true; const wi = tools.findIndex(t => t.name === 'web_search'); if (wi >= 0) tools.splice(wi, 1);
+        aiLog('Web search is turned off for this API account (an admin can enable it in the Claude Console). Continuing without it.', 'err');
+        turn--; continue;
+      }
+      throw e;
+    }
+    const u = resp.usage || {};
+    AI.tokens += (u.input_tokens || 0) + (u.output_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
+    aiMeter(`Batch ${n} of ${of}. ${fmtN(AI.tokens)} tokens used. ${S.proposals.filter(p => p.status === 'pending').length} suggestions waiting.`);
+    messages.push({ role: 'assistant', content: resp.content });
+    for (const b of resp.content) {
+      if (b.type === 'server_tool_use' && b.name === 'web_search') aiLog(`Searching the web for "${b.input?.query || ''}"`);
+    }
+    if (resp.stop_reason === 'pause_turn') continue;  // long web search: let Claude carry on
+    const uses = resp.content.filter(b => b.type === 'tool_use');
+    if (!uses.length) break;
+    const results = []; let finished = false;
+    for (const t of uses) {
+      const d = describeCall(t.name, t.input); if (d) aiLog(d);
+      let out, isErr = false;
+      try { out = await runTool(t.name, t.input || {}, batchIds); }
+      catch (e) { out = { error: e.message }; isErr = true; }
+      if (t.name === 'finish') {
+        finished = true;
+        if (t.input?.summary) aiLog('Claude: ' + t.input.summary, 'ok');
+        for (const x of t.input?.unresolved || []) { const r = recById(x.sequence_id); if (r) aiLog(`Left for you: ${r.title}. ${x.why || ''}`); }
+      }
+      results.push({ type: 'tool_result', tool_use_id: t.id, content: JSON.stringify(out).slice(0, 16000), ...(isErr ? { is_error: true } : {}) });
+    }
+    messages.push({ role: 'user', content: results });
+    if (finished) return;
+    if (AI.abort.signal.aborted) return;
+  }
+  aiLog(`Batch ${n} reached its step limit; moving on.`);
+}
+
+async function runAgent() {
+  if (AI.running) return;
+  if (!S.seqs) return toast('Scan your show folder first so Claude can look through it.', 5000);
+  if (!apiKey()) return toast('Enter your Anthropic API key first.', 4000);
+  AI.running = true; AI.abort = new AbortController(); AI.tokens = 0; AI.runRules = []; AI.noWeb = false;
+  $('#aiStart').hidden = true; $('#aiStop').hidden = false; $('#aiSetup').hidden = true; $('#aiLog').innerHTML = '';
+  const before = S.proposals.length;
+  try {
+    // group related sequences together so vendor lookups cover whole vendors at once
+    const queue = S.catalog.sequences.filter(r => tasksFor(r).length)
+      .sort((a, b) => (a.author_website + a.author_email + a.vendor + a.rel_path).localeCompare(b.author_website + b.author_email + b.vendor + b.rel_path));
+    const size = +cfg.ai_batch || 10, total = Math.ceil(queue.length / size);
+    if (!queue.length) { aiLog('Nothing to do: every selected task is already handled.', 'ok'); return; }
+    aiLog(`${queue.length} sequences need attention. Working in ${total} batch${total > 1 ? 'es' : ''}.`);
+    for (let i = 0, n = 1; i < queue.length && !AI.abort.signal.aborted; i += size, n++) {
+      const batch = queue.slice(i, i + size).map(r => ({ r, tasks: tasksFor(r) })).filter(b => b.tasks.length);
+      if (!batch.length) continue;
+      aiLog(`Batch ${n} of ${total}: ${batch.map(b => b.r.title).join(', ')}`, 'me');
+      await runBatch(batch, n, total);
+      if (cfg.ai_auto) {
+        const sure = S.proposals.filter(p => p.status === 'pending' && p.confidence >= 0.9);
+        if (sure.length) { sure.forEach(applyProposal); saveCfg(); await assemble(false); aiLog(`Accepted ${sure.length} suggestion${sure.length > 1 ? 's' : ''} automatically.`, 'ok'); }
+      }
+      await saveProposals();
+    }
+    aiLog(AI.abort.signal.aborted ? 'Stopped.' : 'Done.', 'ok');
+  } catch (e) {
+    if (e.name === 'AbortError') aiLog('Stopped.', 'ok'); else aiLog('Stopped: ' + e.message, 'err');
+  } finally {
+    AI.running = false; $('#aiStart').hidden = false; $('#aiStart').textContent = 'Run again'; $('#aiStop').hidden = true;
+    await saveProposals();
+    const fresh = S.proposals.slice(before).filter(p => p.status === 'pending').length;
+    aiMeter(`${fmtN(AI.tokens)} tokens used. ${fresh} new suggestion${fresh === 1 ? '' : 's'} to review.`);
+    $('#aiReview').hidden = !S.proposals.some(p => p.status === 'pending');
+  }
+}
+
+// applying suggestions
+function applyProposal(p) {
+  const rels = p.seq_ids.map(id => recById(id)?.rel_path).filter(Boolean);
+  const ov = rel => (cfg.overrides[rel] ||= {});
+  if (p.type === 'song') rels.forEach(rel => { Object.assign(ov(rel), { media: p.data.path, media_reason: p.reason }); delete ov(rel).no_song; });
+  if (p.type === 'no_song') rels.forEach(rel => { Object.assign(ov(rel), { no_song: true, no_song_reason: p.reason }); delete ov(rel).media; });
+  if (p.type === 'details') rels.forEach(rel => Object.assign(ov(rel), p.data));
+  if (p.type === 'vendor') rels.forEach(rel => { ov(rel).vendor = p.data.vendor; });
+  if (p.type === 'art') rels.forEach(rel => { ov(rel).art_url = p.data.url; });
+  if (p.type === 'vendor_rule') {
+    const ex = cfg.vendors.find(v => v.name.toLowerCase() === p.data.vendor.toLowerCase());
+    if (ex) ex.match = [...new Set([...ex.match, ...p.data.patterns])]; else cfg.vendors.push({ name: p.data.vendor, match: p.data.patterns });
+  }
+  p.status = 'accepted';
+}
+async function decide(ps, accept) {
+  ps.forEach(p => accept ? applyProposal(p) : (p.status = 'rejected'));
+  saveCfg(); await saveProposals();
+  if (accept && ps.length) { if (S.seqs) await assemble(false); else toast('Rescan to see accepted changes.', 5000); }
+  renderReview();
+}
+function updateReviewButton() {
+  const n = S.proposals.filter(p => p.status === 'pending').length;
+  $('#openReview').hidden = !n; $('#openReview').textContent = `Review suggestions (${n})`;
+}
+const TYPE_LABEL = { song: 'Song', no_song: 'No song needed', details: 'Details', vendor: 'Vendor', vendor_rule: 'Vendor rule', art: 'Album art' };
+function renderReview() {
+  const pend = S.proposals.filter(p => p.status === 'pending').sort((a, b) => b.confidence - a.confidence);
+  $('#rIntro').textContent = pend.length ? `${pend.length} suggestion${pend.length > 1 ? 's' : ''} waiting. Accepted changes are kept across rescans, and you can undo them from any sequence's details.` : 'No suggestions waiting.';
+  $('#rList').innerHTML = pend.map(p => {
+    const rs = p.seq_ids.map(recById).filter(Boolean), first = rs[0];
+    const who = rs.length > 1 ? `${rs.length} sequences (${esc(rs.slice(0, 3).map(r => r.title).join(', '))}${rs.length > 3 ? '…' : ''})` : esc(first?.title || 'Unknown sequence');
+    let what = '';
+    if (p.type === 'song') what = `${who}: use ${esc(baseAny(p.data.path))}<div class="sub">${esc(p.data.path)}</div>`;
+    if (p.type === 'no_song') what = `${who}: doesn't need a song`;
+    if (p.type === 'details') what = `${who}: ${esc(Object.entries(p.data).map(([k, v]) => `${k} "${v}"`).join(', '))}`;
+    if (p.type === 'vendor') what = `${who}: vendor ${esc(p.data.vendor)}`;
+    if (p.type === 'vendor_rule') what = `${esc(p.data.vendor)} for ${who}<div class="sub">Rule: ${esc(p.data.patterns.join(', '))}</div>`;
+    if (p.type === 'art') what = `<img src="${esc(p.data.url)}" alt="">${who}`;
+    const lvl = p.confidence >= 0.9 ? 'hi' : p.confidence >= 0.75 ? 'mid' : 'lo';
+    return `<li class="prop ${lvl}"><div class="what">${TYPE_LABEL[p.type]}: ${what}</div>
+      <div class="btns"><button class="btn primary" data-acc="${p.id}">Accept</button><button class="btn" data-rej="${p.id}">Reject</button></div>
+      <div class="why">${Math.round(p.confidence * 100)}% sure. ${esc(p.reason || '')}</div></li>`;
+  }).join('');
+  updateReviewButton();
+}
+$('#rList').addEventListener('click', e => {
+  const a = e.target.dataset.acc, r = e.target.dataset.rej, id = a || r; if (!id) return;
+  const p = S.proposals.find(x => x.id === id); if (p) decide([p], !!a);
+});
+$('#rAcceptSure').onclick = () => decide(S.proposals.filter(p => p.status === 'pending' && p.confidence >= 0.9), true);
+$('#rAcceptAll').onclick = () => decide(S.proposals.filter(p => p.status === 'pending'), true);
+$('#rRejectAll').onclick = () => decide(S.proposals.filter(p => p.status === 'pending'), false);
+function openReview() { renderReview(); $('#aiDlg').open && $('#aiDlg').close(); $('#reviewDlg').showModal(); }
+$('#openReview').onclick = openReview; $('#aiReview').onclick = openReview;
+
+function openAI() {
+  if (!S.seqs) return toast(S.show ? 'Rescan first so Claude can look through your folders.' : 'Choose your show folder first.', 5000);
+  const c = taskCounts();
+  const labels = { song: 'Find missing or uncertain songs', vendor: 'Identify vendors', details: 'Fill in missing artists', art: 'Find album art' };
+  $('#aiTasks').innerHTML = Object.keys(labels).map(k => `<label class="check"><input type="checkbox" data-task="${k}" ${cfg.ai_tasks[k] ? 'checked' : ''} ${c[k] ? '' : 'disabled'}><span>${labels[k]} (${c[k]})</span></label>`).join('');
+  $('#aiKey').value = apiKey(); $('#aiRemember').checked = !!store.get('apikey', '');
+  $('#aiModel').value = cfg.ai_model; $('#aiBatch').value = String(cfg.ai_batch); $('#aiWeb').checked = cfg.ai_web; $('#aiAuto').checked = cfg.ai_auto;
+  if (!AI.running) { $('#aiSetup').hidden = false; $('#aiStart').textContent = 'Start'; aiMeter(''); $('#aiLog').hidden = true; $('#aiReview').hidden = true; }
+  $('#aiDlg').showModal();
+}
+$('#openAI').onclick = openAI;
+$('#aiStart').onclick = () => {
+  const key = $('#aiKey').value.trim();
+  if (!/^sk-ant-/.test(key)) return toast('That doesn\'t look like an Anthropic API key (they start with sk-ant-).', 5000);
+  try { sessionStorage.setItem('xlc-key', key); } catch {}
+  if ($('#aiRemember').checked) store.set('apikey', key); else store.del('apikey');
+  cfg.ai_model = $('#aiModel').value; cfg.ai_batch = +$('#aiBatch').value; cfg.ai_web = $('#aiWeb').checked; cfg.ai_auto = $('#aiAuto').checked;
+  document.querySelectorAll('#aiTasks [data-task]').forEach(i => cfg.ai_tasks[i.dataset.task] = i.checked && !i.disabled);
+  saveCfg(); runAgent();
+};
+$('#aiStop').onclick = () => AI.abort?.abort();
+
+// ------------------------------------------------------------------ Google Drive
+let driveToken = null;
+async function getDriveToken() {
+  if (!cfg.gdrive_client_id) throw new Error('Add your Google Drive client ID in Settings first.');
+  if (!/^https?:$/.test(location.protocol)) throw new Error('Google sign-in only works when this page is opened from a web address, not a file. See the README.');
+  if (driveToken && driveToken.exp > Date.now()) return driveToken.value;
+  await loadScript(LIBS.gis);
+  return new Promise((res, rej) => {
+    const client = google.accounts.oauth2.initTokenClient({
+      client_id: cfg.gdrive_client_id, scope: 'https://www.googleapis.com/auth/drive.file',
+      callback: r => r.error ? rej(new Error(r.error_description || r.error))
+        : (driveToken = { value: r.access_token, exp: Date.now() + (r.expires_in - 60) * 1000 }, res(r.access_token)),
+      error_callback: e => rej(new Error(e.type === 'popup_closed' ? 'Google sign-in was closed.' : (e.message || 'Google sign-in failed.'))),
+    });
+    client.requestAccessToken();
+  });
+}
+async function drive(token, url, opts = {}) {
+  const r = await fetch(url, { ...opts, headers: { Authorization: 'Bearer ' + token, ...(opts.headers || {}) } });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error?.message || `Google Drive error ${r.status}`);
+  return j;
+}
+const dq = s => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+async function uploadToDrive() {
+  const c = S.catalog; if (!c) return;
+  setButtons(false);
+  try {
+    const token = await getDriveToken();
+    toast('Uploading to Google Drive…', 60000);
+    const API = 'https://www.googleapis.com/drive/v3/files', UP = 'https://www.googleapis.com/upload/drive/v3/files';
+    let folder = null;
+    if (cfg.gdrive_folder_id) {
+      try { folder = await drive(token, `${API}/${cfg.gdrive_folder_id}?fields=id,webViewLink,trashed`); if (folder.trashed) folder = null; } catch { folder = null; }
+    }
+    if (!folder) {
+      const name = cfg.gdrive_folder_name || 'xLights Catalogue';
+      const q = encodeURIComponent(`name='${dq(name)}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
+      folder = (await drive(token, `${API}?q=${q}&fields=files(id,webViewLink)&pageSize=1`)).files?.[0]
+        || await drive(token, `${API}?fields=id,webViewLink`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+             body: JSON.stringify({ name, mimeType: 'application/vnd.google-apps.folder' }) });
+      cfg.gdrive_folder_id = folder.id; saveCfg();
+    }
+    const files = [
+      ['xlights_catalogue.html', standaloneHtml(c), 'text/html'],
+      ['xlights_catalogue.json', JSON.stringify(withoutArt(c), null, 1), 'application/json'],
+      ['songs_to_check.csv', csvText(c), 'text/csv'],
+    ];
+    for (const [name, data, type] of files) {
+      const q = encodeURIComponent(`name='${dq(name)}' and '${folder.id}' in parents and trashed=false`);
+      const existing = (await drive(token, `${API}?q=${q}&fields=files(id)&pageSize=1`)).files?.[0];
+      const b = 'xlc' + Math.random().toString(36).slice(2);
+      const meta = existing ? {} : { name, parents: [folder.id] };
+      const body = new Blob([`--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n--${b}\r\nContent-Type: ${type}\r\n\r\n`, data, `\r\n--${b}--`]);
+      await drive(token, existing ? `${UP}/${existing.id}?uploadType=multipart` : `${UP}?uploadType=multipart`,
+        { method: existing ? 'PATCH' : 'POST', headers: { 'Content-Type': `multipart/related; boundary=${b}` }, body });
+    }
+    toast('Uploaded to Google Drive', 4000);
+    if (folder.webViewLink) window.open(folder.webViewLink, '_blank', 'noopener');
+  } catch (e) {
+    toast('Upload failed: ' + e.message, 9000);
+  } finally { setButtons(true); }
+}
+
+// ------------------------------------------------------------------ UI
+let view = store.get('view', 'grid'), sortDir = 1;
+const mmss = s => { s = Math.round(s || 0); return s ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` : '–'; };
+const hm = s => { const h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60); return h ? `${h} h ${m} min` : `${m} min`; };
+const hue = str => { let h = 0; for (const c of str) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
+const initials = r => (r.title || r.file_name).replace(/[^A-Za-z0-9 ]/g, '').split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '♪';
+function artHTML(r) {
+  const src = r.art && S.catalog.art[r.art];
+  if (src) return `<img src="${esc(src)}" alt="" loading="lazy">`;
+  const h = hue(r.title + r.artist);
+  return `<div class="ph" style="background:linear-gradient(140deg,hsl(${h} 55% 34%),hsl(${(h + 50) % 360} 60% 22%))">${esc(initials(r))}</div>`;
+}
+function toast(msg, ms = 2600) { const el = $('#toast'); el.textContent = msg; el.classList.add('show'); clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove('show'), ms); }
+function showError(msg) { $('#alert').innerHTML = `<div class="alert"><p><strong>${esc(msg)}</strong></p></div>`; }
+function setButtons(on) { document.querySelectorAll('#headActions button, #pickShow, #resume').forEach(b => b.disabled = !on); }
+
+function drawString() {
+  const svg = $('#string'), w = Math.max(320, svg.clientWidth || 1000), n = Math.round(w / 22);
+  const cols = ['#ef5a5f','#49b97c','#ffc861','#79c3ff','#c78bff'];
+  svg.setAttribute('viewBox', `0 0 ${w} 46`);
+  let d = 'M0 8', dots = '';
+  for (let i = 0; i < n; i++) {
+    const x = (i + .5) * w / n, y = 22 + Math.sin(i / n * Math.PI * 6) * 6;
+    d += ` Q${x - 10} ${y + 8} ${x} ${y}`;
+    dots += `<circle cx="${x}" cy="${y + 6}" r="5" fill="${cols[i % cols.length]}" style="color:${cols[i % cols.length]};--i:${i}"/>`;
+  }
+  svg.innerHTML = `<path d="${d}"/>${dots}`;
+  requestAnimationFrame(() => svg.classList.add('lit'));
+}
+
+function show(c) {
+  S.catalog = c;
+  c.sequences.forEach(r => { r.ai ||= []; r._q = [r.title, r.artist, r.album, r.vendor, r.author, r.file_name, r.rel_path, r.comment].join(' ').toLowerCase(); });
+  $('#landing').hidden = true; $('#bar').hidden = false; $('#headActions').hidden = false;
+  $('#rescan').textContent = S.show ? `Rescan ${S.show.name}` : 'Choose show folder';
+  const s = c.stats;
+  const walked = s.folders ? ` Searched ${fmtN(s.folders)} folders and ${fmtN(s.files)} files. <button class="link" id="openReport">See scan report</button>` : '';
+  $('#summary').innerHTML = `<strong>${fmtN(s.sequences)}</strong> sequences from <strong>${s.vendors}</strong> vendor${s.vendors === 1 ? '' : 's'}, `
+    + `<strong>${hm(s.total_duration)}</strong> of show time. Scanned ${esc(new Date(c.generated).toLocaleString())}.${walked}`;
+  $('#openReport')?.addEventListener('click', openReport);
+  const bad = s.missing, check = s.guess;
+  const fix = S.seqs ? `<button class="btn primary" data-ai>Fix with Claude</button>` : '';
+  let html;
+  if (bad) html = `<div class="alert"><p><strong>${bad} sequence${bad > 1 ? 's have' : ' has'} no song.</strong> Add the song to your show folder or a music folder, mark the sequence as not needing one, or let Claude search for it.${check ? ` ${check} more need checking.` : ''}</p><button class="btn" data-filter="problem">Review them one by one</button>${fix}</div>`;
+  else if (check) html = `<div class="alert warn"><p><strong>${check} sequence${check > 1 ? 's were' : ' was'} matched to a song by name.</strong> Confirm each one is the right song, or let Claude check them.</p><button class="btn" data-filter="guess">Review them one by one</button>${fix}</div>`;
+  else html = `<div class="alert good"><p>Every sequence has its song.</p></div>`;
+  if (s.folders && c.report?.errors?.length) html += `<div class="alert warn"><p><strong>${c.report.errors.length} folder${c.report.errors.length > 1 ? 's or zips' : ' or zip'} couldn't be read.</strong> The rest of the scan finished. See the scan report for details.</p></div>`;
+  $('#alert').innerHTML = html;
+  $('#alert [data-filter]')?.addEventListener('click', e => startReview(e.target.dataset.filter));
+  $('#alert [data-ai]')?.addEventListener('click', openAI);
+  const vSel = $('#vendor'), cur = vSel.value;
+  vSel.innerHTML = '<option value="">All vendors</option>' + [...new Set(c.sequences.map(r => r.vendor))].sort((a, b) => a.localeCompare(b))
+    .map(v => `<option value="${esc(v)}">${esc(v)} (${c.sequences.filter(r => r.vendor === v).length})</option>`).join('');
+  vSel.value = cur;
+  $('#foot').textContent = `Show folder: ${c.root}. Catalogue v${c.version}.`;
+  updateReviewButton();
+  setView(view);
+}
+
+function openReport() {
+  const r = S.catalog?.report; if (!r) return;
+  const li = a => a.map(x => `<li>${x}</li>`).join('');
+  $('#repBody').innerHTML = `
+    <p style="margin:0">Searched <strong>${fmtN(r.folders)}</strong> folders and <strong>${fmtN(r.files)}</strong> files in ${esc(r.roots.join(', '))}, and opened ${fmtN(r.zipOpened)} of ${fmtN(r.zips)} zip file${r.zips === 1 ? '' : 's'}.</p>
+    <div><h3>Found</h3><ul>${li([
+      `${fmtN(r.seq)} sequences (.xsq)`, `${fmtN(r.xsqz)} packaged sequences (.xsqz)`, r.legacy ? `${fmtN(r.legacy)} older-format sequences (.xml)` : '',
+      r.zipSeq ? `${fmtN(r.zipSeq)} sequences inside zip files` : '', `${fmtN(r.media)} songs and videos`, r.zipMedia ? `${fmtN(r.zipMedia)} songs and videos inside zip files` : '',
+    ].filter(Boolean))}</ul></div>
+    ${r.skipped.length ? `<div><h3>Skipped (${r.skipped.length})</h3><ul>${li(r.skipped.slice(0, 200).map(s => `${esc(s.path)}: ${esc(s.why)}`))}</ul><p class="fine">Change what's skipped in Settings.</p></div>` : ''}
+    ${r.errors.length ? `<div><h3>Couldn't read (${r.errors.length})</h3><ul>${li(r.errors.slice(0, 200).map(e => `${esc(e.path)}: ${esc(e.msg)}`))}</ul></div>` : ''}
+    ${r.duplicates.length ? `<div><h3>Zipped copies left out (${r.duplicates.length})</h3><ul>${li(r.duplicates.slice(0, 200).map(esc))}</ul><p class="fine">These sequences are already unzipped elsewhere in your show folder.</p></div>` : ''}`;
+  $('#reportDlg').showModal();
+}
+
+function filtered() {
+  const terms = $('#q').value.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  const v = $('#vendor').value, st = $('#status').value, k = $('#sort').value;
+  const out = S.catalog.sequences.filter(r => (!v || r.vendor === v)
+    && (!st || (st === 'problem' ? (r.media_status === 'missing' || r.media_status === 'guess') : st === 'claude' ? r.ai.length : r.media_status === st))
+    && terms.every(t => r._q.includes(t)));
+  const dir = k === 'modified' || k === 'duration' ? -sortDir : sortDir;
+  return out.sort((a, b) => {
+    const x = a[k], y = b[k];
+    const c = typeof x === 'number' ? x - y : String(x || '\uffff').localeCompare(String(y || '\uffff'), undefined, { sensitivity: 'base' });
+    return c * dir || a.title.localeCompare(b.title);
+  });
+}
+
+function render() {
+  if (!S.catalog) return;
+  const list = filtered(), main = $('#main'), all = S.catalog.sequences.length;
+  $('#count').textContent = `${fmtN(list.length)} of ${fmtN(all)}, ${hm(list.reduce((a, r) => a + r.duration, 0))}`;
+  if (!list.length) { main.innerHTML = `<p class="empty">No sequences match. Clear the search or change the filters.</p>`; return; }
+  if (view === 'grid') {
+    main.innerHTML = `<div class="grid">${list.map(r => `
+      <button class="card" data-id="${r.id}">
+        <div class="art">${artHTML(r)}${r.media_status !== 'ok' ? `<span class="flag ${r.media_status}">${STATUS[r.media_status]}</span>` : ''}</div>
+        <div><div class="ttl">${esc(r.title)}</div><div class="sub">${esc(r.artist || 'Unknown artist')}</div></div>
+        <div class="meta"><span>${esc(r.vendor)}</span><span class="dur">${mmss(r.duration)}</span></div>
+      </button>`).join('')}</div>`;
+  } else {
+    const k = $('#sort').value;
+    const th = (key, label) => `<th data-k="${key}" ${k === key ? `aria-sort="${sortDir > 0 ? 'ascending' : 'descending'}"` : ''}>${label}</th>`;
+    main.innerHTML = `<div class="tablewrap"><table><thead><tr>${th('title', 'Song')}${th('artist', 'Artist')}${th('vendor', 'Vendor')}${th('duration', 'Length')}<th>Song file</th>${th('modified', 'Changed')}</tr></thead><tbody>${
+      list.map(r => `<tr class="row" data-id="${r.id}" tabindex="0">
+        <td class="t"><span class="thumb">${artHTML(r)}</span><span>${esc(r.title)}</span></td>
+        <td>${esc(r.artist)}</td><td>${esc(r.vendor)}</td><td class="dur">${mmss(r.duration)}</td>
+        <td><span class="dot ${r.media_status}"></span>${STATUS[r.media_status]}</td>
+        <td>${esc((r.modified || '').slice(0, 10))}</td></tr>`).join('')}</tbody></table></div>`;
+    main.querySelectorAll('th[data-k]').forEach(h => h.onclick = () => {
+      if ($('#sort').value === h.dataset.k) sortDir = -sortDir; else { $('#sort').value = h.dataset.k; sortDir = 1; }
+      render();
+    });
+  }
+}
+function setView(v) {
+  view = v; store.set('view', v);
+  $('#vGrid').setAttribute('aria-pressed', v === 'grid'); $('#vList').setAttribute('aria-pressed', v === 'list'); render();
+}
+
+// ------------------------------------------------------------------ sequence details + fixing songs
+let navIds = [], curId = null, player = null, picked = null;
+function stopPlayer() { if (player) { player.pause(); URL.revokeObjectURL(player.src); player = null; } document.querySelectorAll('[data-listen].playing').forEach(b => { b.classList.remove('playing'); b.textContent = 'Listen'; }); }
+$('#detail').addEventListener('close', () => { stopPlayer(); picked = null; });
+
+function openDetail(id) {
+  navIds = filtered().map(r => r.id); curId = id; picked = null;
+  renderDetail();
+  if (!$('#detail').open) $('#detail').showModal();
+}
+// "Review them": step through every problem sequence one at a time
+function startReview(filter) {
+  $('#status').value = filter; sortDir = 1; render();
+  const list = filtered();
+  if (!list.length) return toast('Nothing to review.');
+  openDetail(list[0].id);
+}
+
+const lenNote = (r, d) => {
+  if (!d) return '';
+  if (!r.duration) return mmss(d);
+  const diff = Math.abs(d - r.duration);
+  if (diff <= 1) return `<span class="len-ok">${mmss(d)}, same length as the sequence</span>`;
+  if (diff <= 3) return `<span class="len-ok">${mmss(d)}, within ${Math.round(diff)} seconds of the sequence</span>`;
+  return `<span class="len-off">${mmss(d)}, but the sequence is ${mmss(r.duration)}. Possibly a different version</span>`;
+};
+function songLinks(r) {
+  const q = [r.artist, r.title].filter(Boolean).join(' '), enc = encodeURIComponent, links = [];
+  if (/^https?:\/\//i.test(r.music_url)) links.push(["Vendor's link for this song", r.music_url]);
+  let site = r.author_website ? (/^https?:\/\//i.test(r.author_website) ? r.author_website : 'https://' + r.author_website) : '', host = '';
+  try { host = site ? new URL(site).hostname.replace(/^www\./, '') : ''; } catch { site = ''; }
+  const mailHost = (r.author_email.split('@')[1] || '').toLowerCase();
+  if (!host && mailHost && !/^(gmail|googlemail|yahoo|hotmail|outlook|live|icloud|me|aol|msn|comcast|protonmail)\./.test(mailHost)) { host = mailHost; site = 'https://' + mailHost; }
+  if (site) links.push(["Vendor's website", site]);
+  if (host) links.push([`Search ${host} for this song`, `https://www.google.com/search?q=${enc(`site:${host} "${r.title}"`)}`]);
+  else if (r.vendor && r.vendor !== 'Unknown vendor') links.push([`Search for ${r.vendor}`, `https://www.google.com/search?q=${enc(`"${r.vendor}" xlights "${r.title}"`)}`]);
+  links.push(['Buy on Amazon', `https://www.amazon.com/s?k=${enc(q)}&i=digital-music`]);
+  links.push(['Find on Apple Music', `https://music.apple.com/us/search?term=${enc(q)}`]);
+  return links;
+}
+function defaultQueries(r) { return [stemOf(r.media_raw || ''), r.title, `${r.artist || ''} ${r.title}`]; }
+function candRow(r, x) {
+  const t = x.t || {}, tags = [t.title, t.artist].filter(Boolean).join(', ');
+  return `<li class="cand" data-path="${esc(x.e.path)}">
+    <div><div class="nm">${esc(x.e.name)}</div><div class="tg">${esc(dirOf(x.e.path) || S.show.name)}${tags ? ` · ${esc(tags)}` : ''}</div>
+      <div class="tg" data-len>${t.duration ? lenNote(r, t.duration) : ''}</div></div>
+    <div class="btns"><button class="btn sm" data-listen="${esc(x.e.path)}">Listen</button><button class="btn sm primary" data-use="${esc(x.e.path)}">Use</button></div></li>`;
+}
+function fillLengths(r) {  // fetch lengths for listed songs that aren't known yet
+  document.querySelectorAll('#dBody .cand').forEach(async li => {
+    const cell = li.querySelector('[data-len]'); if (cell.innerHTML) return;
+    const e = S.index.byPath.get(li.dataset.path.toLowerCase()); if (!e) return;
+    try { const m = await audioMeta(null, e, true); S.tagIndex?.set(e.path, m); if (li.isConnected) cell.innerHTML = lenNote(r, m.duration); } catch {}
+  });
+}
+function renderCands(r, q) {
+  const list = searchAudio(q ? [q] : defaultQueries(r), 8).filter(x => x.e.path !== r.media_path);
+  $('#cands').innerHTML = list.length ? list.map(x => candRow(r, x)).join('')
+    : `<li class="fine">No similar songs in your folders${q ? ' for that search' : ''}. Add the file from your computer, or find it to buy below.</li>`;
+  fillLengths(r);
+}
+
+function fixSection(r) {
+  const problem = r.media_status === 'missing' || r.media_status === 'guess';
+  const links = songLinks(r).map(([t, u]) => `<a class="btn sm" href="${esc(u)}" target="_blank" rel="noopener">${esc(t)}</a>`).join('');
+  if (!S.seqs) return `<div class="fix"><p class="fine" style="margin:0">To choose or add a song, scan your show folder in this session first.</p>
+    <div class="actions"><button class="btn primary" data-act="rescan">${S.show ? `Rescan ${esc(S.show.name)}` : 'Choose show folder'}</button>${problem ? '<button class="btn" data-act="exempt">Continue without a song</button>' : ''}</div>
+    ${problem ? `<h3>Find or buy the song</h3><div class="links">${links}</div>` : ''}</div>`;
+  if (picked) {
+    const m = picked.meta, expected = baseAny(r.media_raw), sameExt = expected && ext(expected) === ext(picked.file.name);
+    const saveName = sameExt ? expected : picked.file.name, canSave = S.show?.kind === 'handle' && !!window.showDirectoryPicker;
+    const dest = r.in_zip ? dirOf(r.in_zip) : dirOf(r.rel_path);
+    return `<div class="fix"><h3>Use this file?</h3>
+      <div class="picked"><div class="nm"><strong>${esc(picked.file.name)}</strong></div>
+        <div class="tg">${esc([m.title, m.artist].filter(Boolean).join(', ') || 'No title or artist tags')}</div>
+        <div class="tg">${m.duration ? lenNote(r, m.duration) : 'Length unknown'}</div>
+        <div><button class="btn sm" data-listen="__picked">Listen</button></div></div>
+      ${canSave ? `<p class="fine" style="margin:0">Saving a copy into your show folder lets xLights play it. It will be saved in ${esc(dest || S.show.name)} as <strong>${esc(saveName)}</strong>${expected && !sameExt ? `. The sequence expects ${esc(expected)}, so also choose this file as the sequence's audio in xLights` : ''}.</p>` : `<p class="fine" style="margin:0">This browser can't save into your show folder. The catalogue will remember the file, but copy it into your show folder yourself so xLights can play it${expected ? `, named ${esc(expected)}` : ''}.</p>`}
+      <div class="actions">${canSave ? `<button class="btn primary" data-act="saveinto">Save into show folder and use it</button><button class="btn" data-act="linkonly">Use without copying</button>` : `<button class="btn primary" data-act="linkonly">Use this file</button>`}<button class="btn" data-act="cancelpick">Cancel</button></div></div>`;
+  }
+  const guess = r.media_status === 'guess' && r.media_path;
+  return `<div class="fix">
+    ${guess ? `<h3>Is this the right song?</h3><div class="cand" data-path="${esc(r.media_path)}"><div><div class="nm">${esc(baseAny(r.media_path))}</div><div class="tg">${esc(dirOf(r.media_path) || S.show.name)}</div><div class="tg" data-len>${r.song_duration ? lenNote(r, r.song_duration) : ''}</div></div>
+      <div class="btns"><button class="btn sm" data-listen="${esc(r.media_path)}">Listen</button><button class="btn sm primary" data-use="${esc(r.media_path)}">Yes, use it</button></div></div>` : ''}
+    <h3>${guess ? 'Or pick another song from your folders' : problem ? 'Pick the song from your folders' : 'Change the song'}</h3>
+    <input type="search" id="candQ" placeholder="Search by file name, title or artist" aria-label="Search your songs" autocomplete="off">
+    <ul class="cands" id="cands"></ul>
+    <div class="actions"><button class="btn" data-act="addfile">Add a song file from your computer</button>${problem ? '<button class="btn" data-act="exempt">Continue without a song</button>' : ''}</div>
+    ${problem ? `<h3>Find or buy the song</h3><div class="links">${links}</div>` : ''}
+  </div>`;
+}
+
+function renderDetail() {
+  stopPlayer();
+  const r = recById(curId); if (!r) return $('#detail').close();
+  const fact = (k, v) => v ? `<dt>${k}</dt><dd>${v}</dd>` : '';
+  const site = r.author_website ? `<a href="${esc(/^https?:/.test(r.author_website) ? r.author_website : 'https://' + r.author_website)}" target="_blank" rel="noopener">${esc(r.author_website)}</a>` : '';
+  const ov = cfg.overrides[r.rel_path] || {}, marked = r.media_status === 'exempt' && r.media_note.startsWith('Marked');
+  const pos = navIds.indexOf(r.id), lenCmp = r.song_duration && r.duration && Math.abs(r.song_duration - r.duration) > 3 ? ` (song is ${mmss(r.song_duration)})` : '';
+  $('#dBody').innerHTML = `
+    <div class="nav">${navIds.length > 1 && pos >= 0 ? `<span>${pos + 1} of ${navIds.length}</span><button class="btn sm" data-act="prev" ${pos ? '' : 'disabled'}>Previous</button><button class="btn sm" data-act="next" ${pos < navIds.length - 1 ? '' : 'disabled'}>Next</button>` : ''}</div>
+    <button class="close" aria-label="Close" data-act="close">×</button>
+    <div class="dl">
+      <div class="art">${artHTML(r)}</div>
+      <div>
+        <h2 id="dTitle">${esc(r.title)}</h2>
+        <p class="by">${esc(r.artist || 'Unknown artist')}${r.album ? `, from ${esc(r.album)}` : ''}</p>
+        ${r.ai.length ? `<p class="aiby">Set by Claude: ${esc(r.ai.join(', '))}.</p>` : ''}
+        <div class="song"><b><span class="dot ${r.media_status}"></span>${STATUS[r.media_status]}</b>
+          ${esc(r.media_path || r.media_raw || '')}${r.media_note ? `<div class="sub">${esc(r.media_note)}</div>` : ''}</div>
+        ${r.media_status === 'exempt' ? '' : fixSection(r)}
+        <dl class="facts">
+          ${fact('Vendor', esc(r.vendor))}${fact('Author', r.author && r.author !== r.vendor ? esc(r.author) : '')}
+          ${fact('Website', site)}${fact('Email', esc(r.author_email))}
+          ${fact('Length', mmss(r.duration) + lenCmp)}${fact('Timing', esc(r.timing))}${fact('Type', esc(r.seq_type))}
+          ${fact('xLights', esc(r.xlights_version))}${fact('File', esc(r.rel_path))}
+          ${fact('Format', r.legacy ? 'Older xLights sequence (.xml)' : '')}${fact('Zip', r.in_zip ? esc(r.in_zip) + ' (not unzipped)' : '')}
+          ${fact('Changed', esc((r.modified || '').replace('T', ' ')))}${fact('Size', (r.size / 1048576).toFixed(1) + ' MB')}
+          ${fact('Art', { online: 'Found online', claude: 'Chosen by Claude', embedded: 'From the song file' }[r.art_source] || '')}
+          ${fact('Notes', esc(r.comment))}${fact('Problem', esc(r.error))}
+        </dl>
+        <div class="actions">
+          <button class="btn" data-act="copy">Copy sequence path</button>
+          ${marked ? `<button class="btn" data-act="unexempt">Needs a song after all</button>` : ''}
+          ${Object.keys(ov).length ? `<button class="btn" data-act="undo">Undo changes to this sequence</button>` : ''}
+        </div>
+      </div>
+    </div>`;
+  if ($('#cands')) {
+    renderCands(r, '');
+    let t; $('#candQ').addEventListener('input', e => { clearTimeout(t); t = setTimeout(() => renderCands(r, e.target.value.trim()), 150); });
+  }
+  if ($('#dBody [data-len]:empty')) fillLengths(r);
+}
+
+async function afterChange(msg) {
+  const before = navIds.indexOf(curId);
+  picked = null;
+  if (S.seqs) await assemble(false);
+  const list = filtered().map(r => r.id);
+  navIds = list;
+  if (!list.includes(curId)) {  // resolved: it left this list, so move on to the next one
+    const next = list[Math.min(Math.max(before, 0), list.length - 1)];
+    if (next) { curId = next; renderDetail(); toast(`${msg}. Here's the next one.`); }
+    else { $('#detail').close(); toast(`${msg}. Nothing left in this list.`); }
+  } else { renderDetail(); toast(msg); }
+}
+function setSong(r, path, by = 'you') {
+  const ov = (cfg.overrides[r.rel_path] ||= {});
+  Object.assign(ov, { media: path, media_by: by }); delete ov.no_song; delete ov.linked; delete ov.media_reason;
+  const i = cfg.no_audio_expected.indexOf(r.rel_path); if (i >= 0) cfg.no_audio_expected.splice(i, 1);
+  saveCfg();
+}
+async function saveIntoShow(r, file) {
+  if ((await S.show.handle.requestPermission({ mode: 'readwrite' })) !== 'granted') throw new Error('Permission to save into the show folder was not given.');
+  const relDir = r.in_zip ? dirOf(r.in_zip) : dirOf(r.rel_path), expected = baseAny(r.media_raw);
+  const name = expected && ext(expected) === ext(file.name) ? expected : file.name;
+  let dir = S.show.handle;
+  for (const part of relDir.split('/').filter(Boolean)) dir = await dir.getDirectoryHandle(part);
+  let exists = false; try { await dir.getFileHandle(name); exists = true; } catch {}
+  if (exists && !confirm(`${name} already exists in ${relDir || S.show.name}. Replace it?`)) return null;
+  const fh = await dir.getFileHandle(name, { create: true }), w = await fh.createWritable();
+  await w.write(file); await w.close();
+  const entry = { path: (relDir ? relDir + '/' : '') + name, name, getFile: () => fh.getFile() };
+  S.index = buildIndex([...S.index.all.filter(e => e.path.toLowerCase() !== entry.path.toLowerCase()), entry]);
+  S.tagIndex?.set(entry.path, picked.meta);
+  return entry;
+}
+
+$('#dBody').addEventListener('click', async e => {
+  const r = recById(curId); if (!r) return;
+  const t = e.target.closest('[data-act],[data-use],[data-listen]'); if (!t) return;
+  if (t.dataset.listen) {
+    if (t.classList.contains('playing')) return stopPlayer();
+    stopPlayer();
+    try {
+      const f = t.dataset.listen === '__picked' ? picked.file : await S.index.byPath.get(t.dataset.listen.toLowerCase()).getFile();
+      player = new Audio(URL.createObjectURL(f)); player.onended = stopPlayer; await player.play();
+      t.classList.add('playing'); t.textContent = 'Stop';
+    } catch { toast("This file can't be played in the browser.", 4000); stopPlayer(); }
+    return;
+  }
+  if (t.dataset.use) { setSong(r, t.dataset.use); return afterChange(`Using ${baseAny(t.dataset.use)}`); }
+  const a = t.dataset.act;
+  if (a === 'close') $('#detail').close();
+  if (a === 'prev' || a === 'next') { const i = navIds.indexOf(curId) + (a === 'next' ? 1 : -1); if (navIds[i]) { curId = navIds[i]; picked = null; renderDetail(); } }
+  if (a === 'copy') { try { await navigator.clipboard.writeText(r.abs_path); toast('Path copied'); } catch { toast(r.abs_path, 6000); } }
+  if (a === 'rescan') { $('#detail').close(); if (S.show) { await scan(); if (S.seqs && recById(r.id)) openDetail(r.id); } else chooseShow(); }
+  if (a === 'exempt' || a === 'unexempt') {
+    const list = cfg.no_audio_expected;
+    if (a === 'exempt') { if (!list.includes(r.rel_path)) list.push(r.rel_path); const ov = cfg.overrides[r.rel_path]; if (ov) { delete ov.media; delete ov.linked; } }
+    else {
+      if (list.includes(r.rel_path)) list.splice(list.indexOf(r.rel_path), 1);
+      else { const p = list.find(p => globMatch(r.rel_path, [p]) || globMatch(r.file_name, [p])); if (p) return toast(`Covered by the pattern "${p}". Edit it in Settings.`, 6000); }
+    }
+    saveCfg();
+    if (S.seqs) return afterChange(a === 'exempt' ? 'Continuing without a song' : 'Marked as needing a song');
+    return setExempt(r, a === 'exempt');
+  }
+  if (a === 'addfile') {
+    const inp = $('#songFile'); inp.value = '';
+    inp.onchange = async () => {
+      const file = inp.files[0]; if (!file) return;
+      toast('Reading the song…');
+      const meta = await audioMeta(null, { path: `local:${file.name}`, name: file.name, getFile: async () => file }, true).catch(() => ({ duration: 0 }));
+      picked = { file, meta }; renderDetail();
+    };
+    inp.click();
+  }
+  if (a === 'cancelpick') { picked = null; renderDetail(); }
+  if (a === 'saveinto') {
+    try {
+      const entry = await saveIntoShow(r, picked.file); if (!entry) return;
+      setSong(r, entry.path); return afterChange(`Saved ${entry.name} into ${dirOf(entry.path) || S.show.name}`);
+    } catch (err) { toast('Could not save: ' + err.message, 7000); }
+  }
+  if (a === 'linkonly') {
+    const m = picked.meta, ov = (cfg.overrides[r.rel_path] ||= {});
+    ov.linked = { name: picked.file.name, title: m.title || '', artist: m.artist || '', album: m.album || '', duration: m.duration || 0, art: m.art || '' };
+    ov.media_by = 'you'; delete ov.media; delete ov.no_song; saveCfg();
+    return afterChange(`Using ${picked.file.name}`);
+  }
+  if (a === 'undo') {
+    delete cfg.overrides[r.rel_path];
+    const i = cfg.no_audio_expected.indexOf(r.rel_path); if (i >= 0) cfg.no_audio_expected.splice(i, 1);
+    saveCfg();
+    if (S.seqs) return afterChange('Changes undone');
+    toast('Rescan to see the change.');
+  }
+});
+
+async function setExempt(r, on) {
+  const list = cfg.no_audio_expected;
+  if (on && !list.includes(r.rel_path)) list.push(r.rel_path);
+  if (!on) {
+    if (list.includes(r.rel_path)) list.splice(list.indexOf(r.rel_path), 1);
+    else { const p = list.find(p => globMatch(r.rel_path, [p]) || globMatch(r.file_name, [p])); if (p) return toast(`Covered by the pattern "${p}". Edit it in Settings.`, 6000); }
+  }
+  saveCfg();
+  if (S.seqs) { await assemble(false); }
+  else {
+    Object.assign(r, on ? { media_status: 'exempt', media_note: 'Marked as not needing a song' }
+                        : { media_status: 'missing', media_note: 'Rescan to look for a song' });
+    const st = S.catalog.stats; ['ok','guess','missing','exempt'].forEach(k => st[k] = S.catalog.sequences.filter(x => x.media_status === k).length);
+    await idb.set('kv', 'catalog', S.catalog); show(S.catalog);
+  }
+  toast(on ? 'Marked as not needing a song' : 'Mark removed');
+}
+
+// ------------------------------------------------------------------ settings dialog
+function fillSettings() {
+  $('#sExempt').value = cfg.no_audio_expected.join('\n');
+  $('#sAnim').checked = cfg.animation_needs_no_song;
+  $('#sVendors').value = cfg.vendors.map(v => `${v.name} = ${(v.match || []).join(', ')}`).join('\n');
+  $('#sFolderVendor').checked = cfg.vendor_from_folder;
+  $('#sOnline').checked = cfg.fetch_online_art;
+  $('#sZips').checked = cfg.look_in_zips; $('#sBackups').checked = cfg.include_backups;
+  $('#sSkip').value = cfg.skip_folders.join(', ');
+  $('#sClient').value = cfg.gdrive_client_id; $('#sFolderName').value = cfg.gdrive_folder_name;
+  const f = [];
+  if (S.show) f.push(`<li><span>Show folder: ${esc(S.show.name)}</span></li>`);
+  S.music.forEach((m, i) => f.push(`<li><span>Music folder: ${esc(m.name)}</span><button class="btn" type="button" data-rm="${i}">Remove</button></li>`));
+  $('#folderList').innerHTML = f.join('') || '<li><span>No folders chosen yet</span></li>';
+}
+$('#folderList').addEventListener('click', async e => {
+  const i = e.target.dataset.rm; if (i == null) return;
+  S.music.splice(+i, 1); await rememberFolders(); fillSettings(); toast('Music folder removed. Rescan to update.');
+});
+async function readSettingsForm() {
+  const lines = s => s.split('\n').map(x => x.trim()).filter(Boolean);
+  const before = JSON.stringify([cfg.skip_folders, cfg.look_in_zips, cfg.include_backups]);
+  Object.assign(cfg, {
+    no_audio_expected: lines($('#sExempt').value), animation_needs_no_song: $('#sAnim').checked,
+    vendors: lines($('#sVendors').value).map(l => { const [n, ...rest] = l.split('='); return { name: n.trim(), match: rest.join('=').split(',').map(x => x.trim()).filter(Boolean) }; }).filter(v => v.name && v.match.length),
+    vendor_from_folder: $('#sFolderVendor').checked, fetch_online_art: $('#sOnline').checked,
+    look_in_zips: $('#sZips').checked, include_backups: $('#sBackups').checked,
+    skip_folders: $('#sSkip').value.split(',').map(x => x.trim()).filter(Boolean),
+    gdrive_client_id: $('#sClient').value.trim(), gdrive_folder_name: $('#sFolderName').value.trim() || 'xLights Catalogue',
+  });
+  saveCfg();
+  if (JSON.stringify([cfg.skip_folders, cfg.look_in_zips, cfg.include_backups]) !== before && S.show) return scan();
+  if (S.seqs) { busy = true; progress(0.5, 'Applying settings…'); try { await assemble(true); } finally { busy = false; progress(null); } }
+}
+function openSettings() { fillSettings(); $('#settings').returnValue = ''; $('#settings').showModal(); }
+$('#openSettings').onclick = openSettings; $('#openSettings2').onclick = openSettings;
+$('#settings').addEventListener('close', () => { if ($('#settings').returnValue === 'save') { readSettingsForm(); toast('Settings saved'); } });
+$('#sExport').onclick = () => download('xlcatalog_settings.json', JSON.stringify(cfg, null, 2), 'application/json');
+$('#sImport').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try {
+    const data = JSON.parse(await f.text());   // also accepts the desktop app's config.json
+    for (const k of Object.keys(DEFAULTS)) if (k in data) cfg[k] = data[k];
+    saveCfg(); fillSettings(); toast('Settings imported. Save to apply them.');
+  } catch { toast('That file isn\'t a settings file.', 5000); }
+};
+$('#sClear').onclick = async () => {
+  if (!confirm('Forget the saved catalogue, remembered folders, cached song details and pending suggestions? Your settings and accepted changes are kept.')) return;
+  for (const s of ['kv','seq','audio','online']) await idb.clear(s);
+  location.reload();
+};
+
+// ------------------------------------------------------------------ wiring
+async function chooseShow() {
+  const src = await pickFolder(); if (!src) return;
+  S.show = src; S.seqs = null; await rememberFolders(); scan();
+}
+$('#pickShow').onclick = chooseShow;
+$('#rescan').onclick = () => S.show ? scan() : chooseShow();
+$('#addMusic').onclick = async () => {
+  const src = await pickFolder(); if (!src) return;
+  S.music.push(src); await rememberFolders();
+  if (S.show) scan(); else toast('Music folder added');
+};
+$('#download').onclick = () => {
+  if (!S.catalog) return;
+  download('xlights_catalogue.html', standaloneHtml(S.catalog), 'text/html');
+  const s = S.catalog.stats; if (s.missing || s.guess) download('songs_to_check.csv', csvText(S.catalog), 'text/csv');
+};
+$('#upload').onclick = uploadToDrive;
+$('#main').addEventListener('click', e => { const el = e.target.closest('[data-id]'); if (el) openDetail(el.dataset.id); });
+$('#main').addEventListener('keydown', e => { if (e.key === 'Enter') { const el = e.target.closest('tr[data-id]'); if (el) openDetail(el.dataset.id); } });
+document.querySelectorAll('dialog').forEach(d => d.addEventListener('click', e => {
+  if (e.target === d || e.target.closest('[data-close]')) { if (d.id === 'settings' && e.target !== d) return; d.close(); }
+}));
+let qt; $('#q').addEventListener('input', () => { clearTimeout(qt); qt = setTimeout(render, 90); });
+['#vendor', '#status', '#sort'].forEach(s => $(s).addEventListener('change', () => { sortDir = 1; render(); }));
+$('#vGrid').onclick = () => setView('grid'); $('#vList').onclick = () => setView('list');
+document.addEventListener('keydown', e => {
+  if (e.key === '/' && !['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName) && !document.querySelector('dialog[open]')) { e.preventDefault(); $('#q').focus(); }
+});
+
+// ------------------------------------------------------------------ start
+(async () => {
+  drawString();
+  S.proposals = (await idb.get('kv', 'proposals')) || [];
+  const embedded = $('#catalog-data').textContent.trim();
+  const showH = await idb.get('kv', 'show');
+  const musicH = (await idb.get('kv', 'music')) || [];
+  if (showH) { S.show = { kind: 'handle', handle: showH, name: showH.name }; S.music = musicH.map(h => ({ kind: 'handle', handle: h, name: h.name })); }
+  if (embedded) {
+    try { show(JSON.parse(embedded)); $('#alert').insertAdjacentHTML('afterbegin', `<div class="alert info"><p>This is a saved catalogue from ${esc(new Date(S.catalog.generated).toLocaleDateString())}. Rescan to bring it up to date.</p></div>`); return; } catch {}
+  }
+  const last = await idb.get('kv', 'catalog');
+  if (last) { show(last); return; }
+  if (S.show) { $('#resume').hidden = false; $('#resume').textContent = `Scan ${S.show.name} again`; $('#resume').onclick = () => scan(); }
+})();
+})();
+</script>
+</body>
+</html>
