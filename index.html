@@ -646,16 +646,47 @@ async function rememberFolders() {
 }
 
 // ------------------------------------------------------------------ reading sequences
-const ENT = {amp:'&', lt:'<', gt:'>', quot:'"', apos:"'"};
-const decode = s => s.replace(/&(#x?[0-9a-f]+|\w+);/gi, (m, e) => e[0] === '#'
-  ? String.fromCodePoint(e[1].toLowerCase() === 'x' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10)) : (ENT[e] ?? m));
+const ENT = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', rsquo: '’', lsquo: '‘', rdquo: '”', ldquo: '“',
+  ndash: '–', mdash: '—', hellip: '…', copy: '©', reg: '®', trade: '™', eacute: 'é', egrave: 'è', ecirc: 'ê', euml: 'ë',
+  aacute: 'á', agrave: 'à', acirc: 'â', auml: 'ä', aring: 'å', iacute: 'í', icirc: 'î', iuml: 'ï', oacute: 'ó', ocirc: 'ô',
+  ouml: 'ö', oslash: 'ø', uacute: 'ú', ucirc: 'û', uuml: 'ü', ntilde: 'ñ', ccedil: 'ç', szlig: 'ß', Eacute: 'É', Ntilde: 'Ñ' };
+const decode = s => s.replace(/&(#x?[0-9a-f]+|\w+);/gi, (m, e) => {
+  if (e[0] !== '#') return ENT[e] ?? ENT[e.toLowerCase()] ?? m;
+  const n = /^#x/i.test(e) ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
+  return n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : m;
+});
+
+// Clean up text from sequence files, song tags and file names:
+//  - entities encoded more than once ("It&amp;apos;s" -> "It's")
+//  - UTF-8 text that was read as Windows-1252 ("Itâ€™s" -> "It’s", "BeyoncÃ©" -> "Beyoncé")
+const CP1252 = { 0x20AC: 0x80, 0x201A: 0x82, 0x0192: 0x83, 0x201E: 0x84, 0x2026: 0x85, 0x2020: 0x86, 0x2021: 0x87, 0x02C6: 0x88,
+  0x2030: 0x89, 0x0160: 0x8A, 0x2039: 0x8B, 0x0152: 0x8C, 0x017D: 0x8E, 0x2018: 0x91, 0x2019: 0x92, 0x201C: 0x93, 0x201D: 0x94,
+  0x2022: 0x95, 0x2013: 0x96, 0x2014: 0x97, 0x02DC: 0x98, 0x2122: 0x99, 0x0161: 0x9A, 0x203A: 0x9B, 0x0153: 0x9C, 0x017E: 0x9E, 0x0178: 0x9F };
+const MOJIBAKE = /[\u00C2-\u00F4][\u0080-\u00BF\u0152\u0153\u0160\u0161\u0178\u017D\u017E\u0192\u02C6\u02DC\u2013\u2014\u2018-\u201E\u2020-\u2022\u2026\u2030\u2039\u203A\u20AC\u2122]/;
+function fixMojibake(s) {
+  if (!MOJIBAKE.test(s)) return s;
+  const bytes = [];
+  for (const ch of s) {
+    const c = ch.codePointAt(0);
+    if (c < 0x100) bytes.push(c); else if (CP1252[c] !== undefined) bytes.push(CP1252[c]); else return s;
+  }
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(new Uint8Array(bytes)); } catch { return s; }
+}
+function fixText(v) {
+  if (typeof v !== 'string' || !v) return v;
+  let out = v;
+  for (let i = 0; i < 4; i++) { const next = decode(out); if (next === out) break; out = next; }
+  return fixMojibake(out);
+}
+const tidy = v => typeof v === 'string' ? fixText(v).replace(/\s+/g, ' ').trim() : v;
+function tidyHead(head) { const h = {}; for (const [k, v] of Object.entries(head || {})) h[k] = fixText(v).trim(); return h; }
 
 function parseHead(text) {
   const m = text.match(/<head\b[^>]*>([\s\S]*?)<\/head>/i);
   if (!m) return null;
   const head = {};
   for (const t of m[1].matchAll(/<([\w:-]+)\b[^>]*?(?:\/>|>([\s\S]*?)<\/\1>)/g))
-    head[t[1].split(':').pop().toLowerCase()] = decode((t[2] || '').replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')).trim();
+    head[t[1].split(':').pop().toLowerCase()] = fixText((t[2] || '').replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')).trim();
   return head;
 }
 async function readHeadFromBlob(blob) {
@@ -677,7 +708,7 @@ async function readSequence(entry) {
   const key = `${entry.path}|${file.size}|${file.lastModified}`;
   const base = { entry, key, size: file.size, modified: file.lastModified };
   const cached = await idb.get('seq', entry.path);
-  if (cached && cached.key === key) return Object.assign(base, cached.data);
+  if (cached && cached.key === key) return Object.assign(base, cached.data, { head: tidyHead(cached.data.head) });
   let data;
   try {
     if (ext(entry.name) === '.xsqz') {
@@ -798,7 +829,7 @@ async function audioMeta(seq, media, needDuration) {
     const t = await readTags(blob);
     let art = m?.art || '';
     if (!art && t.picture?.data) art = await thumbnail(new Blob([new Uint8Array(t.picture.data)], { type: t.picture.format || 'image/jpeg' }));
-    m = { title: t.title || '', artist: t.artist || t.TPE2?.data || '', album: t.album || '', genre: String(t.genre || '').trim(), duration: m?.duration || 0, art };
+    m = { title: tidy(t.title || ''), artist: tidy(t.artist || t.TPE2?.data || ''), album: tidy(t.album || ''), genre: tidy(String(t.genre || '')), duration: m?.duration || 0, art };
   }
   if (needDuration && !m.duration) m.duration = await mediaDuration(blob);
   await idb.set('audio', key, m);
@@ -988,8 +1019,8 @@ async function assemble(withProgress) {
     done++; if (withProgress && (done % 5 === 0 || done === total)) progress(0.5 + 0.45 * done / total, `Matching songs and album art: ${done} of ${total}`);
     return {
       id: hash(rel).slice(0, 12),
-      title: ov.title || head.song || am.title || ft || cleanTitle(stemOf(seq.entry.name)),
-      artist: ov.artist || head.artist || am.artist || fa, album: ov.album || head.album || am.album,
+      title: tidy(ov.title || head.song || am.title || ft || cleanTitle(stemOf(seq.entry.name))),
+      artist: tidy(ov.artist || head.artist || am.artist || fa), album: tidy(ov.album || head.album || am.album),
       vendor, vendor_source: vsrc, author: head.author || '', author_email: head['author-email'] || '',
       author_website: head['author-website'] || '', duration: Math.round((seqDur || audioDur || 0) * 100) / 100,
       song_duration: Math.round(audioDur * 100) / 100,
@@ -1582,7 +1613,7 @@ function drawString() {
 
 function show(c) {
   S.catalog = c;
-  c.sequences.forEach(r => { r.ai ||= []; r.genre ||= ''; indexText(r); });
+  c.sequences.forEach(r => { r.ai ||= []; r.genre ||= ''; for (const k of ['title', 'artist', 'album', 'vendor', 'author']) r[k] = tidy(r[k] || ''); r.comment = fixText(r.comment || ''); indexText(r); });
   $('#landing').hidden = true; $('#bar').hidden = false; $('#headActions').hidden = false;
   $('#rescan').textContent = S.show ? `Rescan ${S.show.name}` : 'Choose show folder';
   const s = c.stats;
