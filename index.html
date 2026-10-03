@@ -1766,6 +1766,11 @@ const lenNote = (r, d) => {
   if (diff <= 3) return `<span class="len-ok">${mmss(d)}, within ${Math.round(diff)} seconds of the sequence</span>`;
   return `<span class="len-off">${mmss(d)}, but the sequence is ${mmss(r.duration)}. Possibly a different version</span>`;
 };
+// Sequence Scout compares sequences for a song across many vendors: https://sequencescout.com/browse?q=wizards+in+winter
+function scoutUrl(r) {
+  const q = cleanTitle(String(r.title || '')).replace(/\(.*?\)|\[.*?\]/g, '').replace(/\s+/g, ' ').trim();
+  return q ? 'https://sequencescout.com/browse?' + new URLSearchParams({ q }).toString() : '';
+}
 function seqSearchUrl(r) {
   const host = vendorHost(r), enc = encodeURIComponent;
   if (host) return [`Search ${host}`, `https://www.google.com/search?q=${enc(`site:${host} "${r.title}"`)}`];
@@ -1777,10 +1782,12 @@ function seqPageFact(r) {
   if (r.seq_url) {
     let label = r.seq_url; try { const u = new URL(r.seq_url); label = u.hostname.replace(/^www\./, '') + decodeURIComponent(u.pathname).replace(/\/$/, ''); } catch {}
     return `<dt>Sequence page</dt><dd><a href="${esc(r.seq_url)}" target="_blank" rel="noopener">${esc(label)}</a>${src ? ` <span class="fine">(${src})</span>` : ''}
-      <span class="inline-acts"><button class="btn sm" data-act="editlink">Change</button><button class="btn sm" data-act="removelink">Remove</button></span></dd>`;
+      <span class="inline-acts"><button class="btn sm" data-act="editlink">Change</button><button class="btn sm" data-act="removelink">Remove</button>${scoutUrl(r) ? `<a class="btn sm" href="${esc(scoutUrl(r))}" target="_blank" rel="noopener">Compare on Sequence Scout</a>` : ''}</span></dd>`;
   }
   const s = seqSearchUrl(r);
-  return `<dt>Sequence page</dt><dd><span class="inline-acts">${s ? `<a class="btn sm" href="${esc(s[1])}" target="_blank" rel="noopener">${esc(s[0])}</a>` : ''}<button class="btn sm" data-act="editlink">Add link</button></span></dd>`;
+  const sc = scoutUrl(r);
+  return `<dt>Sequence page</dt><dd><span class="inline-acts">${sc ? `<a class="btn sm" href="${esc(sc)}" target="_blank" rel="noopener">Find on Sequence Scout</a>` : ''}${s ? `<a class="btn sm" href="${esc(s[1])}" target="_blank" rel="noopener">${esc(s[0])}</a>` : ''}<button class="btn sm" data-act="editlink">Add link</button></span>
+    <div class="fine">Find the sequence, open its vendor page, then paste that page's address with Add link.</div></dd>`;
 }
 async function setSeqUrl(r, url, by = 'you') {
   const ov = (cfg.overrides[r.rel_path] ||= {});
@@ -1798,6 +1805,7 @@ function songLinks(r) {
   const mailHost = (r.author_email.split('@')[1] || '').toLowerCase();
   if (!host && mailHost && !/^(gmail|googlemail|yahoo|hotmail|outlook|live|icloud|me|aol|msn|comcast|protonmail)\./.test(mailHost)) { host = mailHost; site = 'https://' + mailHost; }
   if (site) links.push(["Vendor's website", site]);
+  if (scoutUrl(r)) links.push(['Find on Sequence Scout', scoutUrl(r)]);
   if (host) links.push([`Search ${host} for this song`, `https://www.google.com/search?q=${enc(`site:${host} "${r.title}"`)}`]);
   else if (r.vendor && r.vendor !== 'Unknown vendor') links.push([`Search for ${r.vendor}`, `https://www.google.com/search?q=${enc(`"${r.vendor}" xlights "${r.title}"`)}`]);
   links.push(['Buy on Amazon', `https://www.amazon.com/s?k=${enc(q)}&i=digital-music`]);
