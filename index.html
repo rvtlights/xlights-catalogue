@@ -92,6 +92,8 @@ body.selecting .toast{bottom:96px}
 .card .meta{margin-top:auto}
 .genrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:-8px 0 16px}
 .genrow label{color:var(--mist)}
+.inline-acts{display:inline-flex;flex-wrap:wrap;gap:6px;vertical-align:middle;margin-left:6px}
+dl.facts dd .inline-acts:first-child{margin-left:0}
 
 /* grid */
 main.wrap{padding-top:28px;padding-bottom:80px}
@@ -375,7 +377,7 @@ const DEFAULTS = {
   skip_folders: ['__MACOSX', '.*', '$RECYCLE.BIN', 'System Volume Information'], include_backups: false, look_in_zips: true,
   fetch_online_art: false, overrides: {},
   gdrive_client_id: '', gdrive_folder_name: 'xLights Catalogue', gdrive_folder_id: '',
-  ai_model: 'claude-sonnet-5-5', ai_batch: 10, ai_tasks: { song: true, vendor: true, details: true, art: true, genre: true }, ai_web: true, ai_auto: false,
+  ai_model: 'claude-sonnet-5-5', ai_batch: 10, ai_tasks: { song: true, vendor: true, details: true, art: true, genre: true, link: true }, ai_web: true, ai_auto: false,
   genres: ['Classic Christmas', "Rock 'n' Roll & Oldies", 'Christmas Pop', 'Country', 'Rock & Metal', 'R&B & Soul', 'Jazz & Swing',
            'Orchestral & Instrumental', 'Religious & Choral', 'A Cappella', 'Kids & Movies', 'Electronic & Dance', 'Hip-Hop',
            'Latin', 'Novelty & Comedy', 'Halloween', 'Other Holidays', 'Show Elements'],
@@ -813,6 +815,32 @@ function itunesSearch(term, limit = 1) {
   });
 }
 const bigArt = u => u ? u.replace('100x100bb', '600x600bb') : '';
+const FREEMAIL = /^(gmail|googlemail|yahoo|ymail|hotmail|outlook|live|icloud|me|mac|aol|msn|comcast|att|verizon|protonmail|proton|gmx)\./;
+function hostOf(u) { try { return new URL(/^https?:\/\//i.test(u) ? u : 'https://' + u).hostname.replace(/^www\./, '').toLowerCase(); } catch { return ''; } }
+// The vendor's web domain: from the sequence's website or email, or from a vendor rule pattern like "*acmepixel.com*"
+function vendorHost(r) {
+  const h = r.author_website ? hostOf(r.author_website) : '';
+  if (h) return h;
+  const m = (r.author_email.split('@')[1] || '').toLowerCase();
+  if (m && !FREEMAIL.test(m)) return m;
+  const rule = cfg.vendors.find(v => v.name === r.vendor);
+  for (const p of rule?.match || []) { const d = p.toLowerCase().match(/([a-z0-9-]+\.)+[a-z]{2,}/); if (d) return d[0].replace(/^www\./, ''); }
+  return '';
+}
+// Compare URLs ignoring scheme, "www.", #fragments and a trailing slash
+function normUrl(u) { try { const x = new URL(u); return (x.hostname.replace(/^www\./, '') + x.pathname.replace(/\/+$/, '') + x.search).toLowerCase(); } catch { return ''; } }
+// A product page written into the sequence file (website or notes), if it looks like it's for this song
+function fileSeqUrl(head, title) {
+  const words = normName(title + '.x').length >= 4 ? cleanTitle(title).toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 4) : [];
+  const cands = [head['author-website'] || '', ...((head.comment || '').match(/https?:\/\/[^\s"'<>]+/g) || [])];
+  for (const c of cands) {
+    if (!c) continue;
+    let u; try { u = new URL(/^https?:\/\//i.test(c) ? c : 'https://' + c); } catch { continue; }
+    const path = decodeURIComponent(u.pathname).toLowerCase().replace(/[^a-z0-9]+/g, ' ');
+    if (words.length && words.some(w => path.includes(w))) return u.href;
+  }
+  return '';
+}
 // Map a song file's own genre tag onto your genre list. Vague tags ("Holiday", "Christmas") are ignored.
 const GENRE_MAP = [
   [/country|bluegrass|americana|western/, 'Country'], [/jazz|swing|big ?band|crooner|vocal standards/, 'Jazz & Swing'],
@@ -975,6 +1003,10 @@ async function assemble(withProgress) {
         const g = mapGenre(am.genre); return { genre: g, genre_source: g ? 'tag' : '' };
       })(),
       song_genre_tag: am.genre || '',
+      ...(() => {
+        if (ov.seq_url) return { seq_url: ov.seq_url, seq_url_source: ov.seq_url_by || 'you' };
+        const u = fileSeqUrl(head, head.song || am.title || stemOf(seq.entry.name)); return { seq_url: u, seq_url_source: u ? 'file' : '' };
+      })(),
       _art: art, art: '', art_source: artSrc, error: seq.error, ai, ...media,
     };
   });
@@ -1011,9 +1043,9 @@ async function assemble(withProgress) {
 function withoutArt(c) { const { art, ...rest } = c; return rest; }
 function csvText(c) {
   const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  const rows = [['status','sequence','title','artist','vendor','expected song','matched song','note','song link']];
+  const rows = [['status','sequence','title','artist','vendor','expected song','matched song','note','song link','sequence page']];
   for (const r of c.sequences) if (r.media_status === 'missing' || r.media_status === 'guess')
-    rows.push([r.media_status, r.rel_path, r.title, r.artist, r.vendor, baseAny(r.media_raw), r.media_path, r.media_note, r.music_url]);
+    rows.push([r.media_status, r.rel_path, r.title, r.artist, r.vendor, baseAny(r.media_raw), r.media_path, r.media_note, r.music_url, r.seq_url || '']);
   return rows.map(r => r.map(q).join(',')).join('\r\n');
 }
 function standaloneHtml(c) {
@@ -1023,7 +1055,7 @@ function standaloneHtml(c) {
 }
 
 // ------------------------------------------------------------------ Claude agent
-const AI = { running: false, abort: null, tokens: 0, artUrls: new Set(), runRules: [], log: [] };
+const AI = { running: false, abort: null, tokens: 0, artUrls: new Set(), webUrls: new Set(), runRules: [], log: [] };
 const apiKey = () => sessionStorage.getItem('xlc-key') || store.get('apikey', '');
 
 const AI_SYSTEM = `You help organise a Christmas / holiday light show built with xLights. You are working on a catalogue of xLights sequences (.xsq files, .xsqz packages, some inside vendor .zip downloads). The app has already walked every folder and matched what it could with simple rules. You handle the cases those rules could not settle.
@@ -1033,6 +1065,7 @@ Each sequence you receive lists the tasks to do for it:
 - "vendor": work out the business that sold the sequence. The author, email domain, website and folder names are clues. Use web search (if available) to confirm the vendor's proper business name. Prefer propose_vendor_rule with patterns like "*domain.com*" or "Vendors/Name/*" so that every sequence from that vendor is covered, and reuse an existing vendor name exactly when it is the same company. Use propose_vendor only for one-off cases.
 - "details": fill in a missing artist (and fix an obviously wrong title) from audio tags, the file name, or a web search. Only propose values you are confident about.
 - "art": find album art with search_album_art and propose an image whose artist and title match. Prefer the original studio release. Skip if nothing matches well.
+- "link": find this sequence's own product page on the vendor's website, using web search (for example: site:vendor-domain "song title", or the vendor name plus "xlights" and the title). The right page sells this sequence for this song; not the vendor's home page, a category or search page, or another vendor's page. Vendors sometimes sell several versions of one song: prefer the page whose name matches the sequence's file name or artist. Propose the page with propose_sequence_link using the exact URL from a search result. If you can't find it confidently, leave it. If the vendor isn't a business that sells sequences (for example a person's own name, "Me", or the show owner), skip it without searching.
 - "genre": choose one genre from the list given in the batch, using propose_genres (one call can cover many sequences). Judge by the specific recording, not the song: "Jingle Bell Rock" by Bobby Helms is Rock 'n' Roll & Oldies but by Hall & Oates is Christmas Pop. Guide: crooners and vintage standards (Bing Crosby, Nat King Cole, Frank Sinatra, Andy Williams, Perry Como) are Classic Christmas; 1950s-60s rock 'n' roll and girl groups (Brenda Lee, Bobby Helms, the Ronettes) are Rock 'n' Roll & Oldies; modern pop (Mariah Carey, Wham!, Ariana Grande, Michael Bublé's pop covers) is Christmas Pop; Trans-Siberian Orchestra is Rock & Metal; Mannheim Steamroller and film scores are Orchestral & Instrumental; Pentatonix is A Cappella; songs from films and children's shows (Frozen, The Grinch, Rudolph) are Kids & Movies; intros, countdowns, announcements and loops without music are Show Elements. If the artist is unknown, use the song title, file and folder names, audio tags or a web search. Only suggest a genre outside the list when none fits at all.
 
 Rules:
@@ -1052,6 +1085,7 @@ const AI_TOOLS = [
   { name: 'propose_details', description: 'Suggest a corrected title, artist and/or album for a sequence.', input_schema: { type: 'object', properties: { sequence_id: { type: 'string' }, title: { type: 'string' }, artist: { type: 'string' }, album: { type: 'string' }, confidence: { type: 'number' }, reason: { type: 'string' } }, required: ['sequence_id', 'confidence', 'reason'] } },
   { name: 'propose_vendor', description: 'Suggest the vendor for specific sequences.', input_schema: { type: 'object', properties: { sequence_ids: { type: 'array', items: { type: 'string' } }, vendor: { type: 'string' }, confidence: { type: 'number' }, reason: { type: 'string' } }, required: ['sequence_ids', 'vendor', 'confidence', 'reason'] } },
   { name: 'propose_vendor_rule', description: 'Suggest a vendor rule: glob patterns checked against author, email, website and path of every sequence. Patterns must be specific (e.g. "*acmepixel.com*", "Vendors/Acme/*").', input_schema: { type: 'object', properties: { vendor: { type: 'string' }, patterns: { type: 'array', items: { type: 'string' } }, confidence: { type: 'number' }, reason: { type: 'string' } }, required: ['vendor', 'patterns', 'confidence', 'reason'] } },
+  { name: 'propose_sequence_link', description: "Suggest the web page where this sequence is sold on the vendor's site. The url must be one that appeared in your web search results.", input_schema: { type: 'object', properties: { sequence_id: { type: 'string' }, url: { type: 'string' }, confidence: { type: 'number' }, reason: { type: 'string' } }, required: ['sequence_id', 'url', 'confidence', 'reason'] } },
   { name: 'propose_genres', description: 'Suggest a genre for one or more sequences. Use genres from the list in the batch.', input_schema: { type: 'object', properties: { items: { type: 'array', items: { type: 'object', properties: { sequence_id: { type: 'string' }, genre: { type: 'string' }, confidence: { type: 'number' }, reason: { type: 'string' } }, required: ['sequence_id', 'genre', 'confidence', 'reason'] } } }, required: ['items'] } },
   { name: 'propose_album_art', description: 'Suggest album art for a sequence, using an image_url from search_album_art.', input_schema: { type: 'object', properties: { sequence_id: { type: 'string' }, image_url: { type: 'string' }, confidence: { type: 'number' }, reason: { type: 'string' } }, required: ['sequence_id', 'image_url', 'confidence', 'reason'] } },
   { name: 'finish', description: 'Call once every sequence in this batch has been handled.', input_schema: { type: 'object', properties: { summary: { type: 'string' }, unresolved: { type: 'array', items: { type: 'object', properties: { sequence_id: { type: 'string' }, why: { type: 'string' } } } } }, required: ['summary'] } },
@@ -1094,7 +1128,8 @@ function seqInfo(r) {
     sequence_length: r.duration ? `${mmssS(r.duration)} (${r.duration}s)` : 'unknown',
     expected_song_file: r.media_raw || null, song_status: r.media_status, current_song: r.media_path || null,
     current_song_length: r.song_duration ? `${mmssS(r.song_duration)} (${r.song_duration}s)` : null, note: r.media_note || null, has_album_art: !!r.art,
-    genre: r.genre || null, genre_tag_in_song_file: r.song_genre_tag || null };
+    genre: r.genre || null, genre_tag_in_song_file: r.song_genre_tag || null,
+    vendor_domain: vendorHost(r) || null, sequence_page: r.seq_url || null };
 }
 function vendorRuleMatches(patterns) {
   return S.catalog.sequences.filter(r => [r.author, r.author_email, r.author_website, r.rel_path].some(f => f && globMatch(f, patterns)));
@@ -1107,13 +1142,14 @@ function tasksFor(r) {
   if (want.details && !r.artist && !ov.artist) t.push('details');
   if (want.art && !r.art && !ov.art_url) t.push('art');
   if (want.genre && !r.genre) t.push('genre');
+  if (want.link && !r.seq_url && !ov.seq_url && r.vendor !== 'Unknown vendor' && cfg.ai_web && !AI.noWeb) t.push('link');
   return t;
 }
 function taskCounts() {
-  const c = { song: 0, vendor: 0, details: 0, art: 0, genre: 0 }, saved = cfg.ai_tasks;
-  cfg.ai_tasks = { song: true, vendor: true, details: true, art: true, genre: true };
+  const c = { song: 0, vendor: 0, details: 0, art: 0, genre: 0, link: 0 }, saved = cfg.ai_tasks, savedWeb = cfg.ai_web;
+  cfg.ai_tasks = { song: true, vendor: true, details: true, art: true, genre: true, link: true }; cfg.ai_web = true;
   for (const r of S.catalog?.sequences || []) for (const t of tasksFor(r)) c[t]++;
-  cfg.ai_tasks = saved; return c;
+  cfg.ai_tasks = saved; cfg.ai_web = savedWeb; return c;
 }
 
 function aiLog(text, cls = '') {
@@ -1220,6 +1256,14 @@ async function runTool(name, input, batchIds) {
       addProposal({ type: 'art', seq_ids: [r.id], data: { url: u }, confidence: conf(input.confidence), reason: input.reason });
       aiLog(`Suggested album art for ${r.title}`, 'me'); return { ok: true };
     }
+    case 'propose_sequence_link': {
+      const r = needSeq(input.sequence_id), url = String(input.url || '').trim();
+      if (!/^https?:\/\//i.test(url) || !normUrl(url)) throw new Error('url must be a full web address');
+      if (!AI.webUrls.has(normUrl(url))) throw new Error('url must be exactly one that appeared in your web search results');
+      const host = hostOf(url), vh = vendorHost(r);
+      addProposal({ type: 'link', seq_ids: [r.id], data: { url, other_site: !!(vh && host !== vh && !host.endsWith('.' + vh)) }, confidence: conf(input.confidence), reason: input.reason });
+      aiLog(`Found the page for ${r.title}: ${host}`, 'me'); return { ok: true };
+    }
     case 'propose_genres': {
       let ok = 0; const errs = [];
       for (const it of (input.items || []).slice(0, 100)) {
@@ -1280,6 +1324,8 @@ async function runBatch(batch, n, of) {
     messages.push({ role: 'assistant', content: resp.content });
     for (const b of resp.content) {
       if (b.type === 'server_tool_use' && b.name === 'web_search') aiLog(`Searching the web for "${b.input?.query || ''}"`);
+      // remember every page the search returned: suggested sequence links must be one of these
+      if (b.type === 'web_search_tool_result' && Array.isArray(b.content)) b.content.forEach(x => x?.url && AI.webUrls.add(normUrl(x.url)));
     }
     if (resp.stop_reason === 'pause_turn') continue;  // long web search: let Claude carry on
     const uses = resp.content.filter(b => b.type === 'tool_use');
@@ -1308,17 +1354,18 @@ async function runAgent() {
   if (AI.running) return;
   if (!S.seqs) return toast('Scan your show folder first so Claude can look through it.', 5000);
   if (!apiKey()) return toast('Enter your Anthropic API key first.', 4000);
-  AI.running = true; AI.abort = new AbortController(); AI.tokens = 0; AI.runRules = []; AI.noWeb = false;
+  AI.running = true; AI.abort = new AbortController(); AI.tokens = 0; AI.runRules = []; AI.noWeb = false; AI.webUrls = new Set();
   $('#aiStart').hidden = true; $('#aiStop').hidden = false; $('#aiSetup').hidden = true; $('#aiLog').innerHTML = '';
   const before = S.proposals.length;
   try {
     // group related sequences together so vendor lookups cover whole vendors at once
     const genreOnly = r => { const t = tasksFor(r); return t.length === 1 && t[0] === 'genre'; };
-    const key = r => genreOnly(r) ? '1' + r.artist + r.title : '0' + r.author_website + r.author_email + r.vendor + r.rel_path;
+    const weight = r => { const t = tasksFor(r); return t.every(x => x === 'genre') ? 0.2 : t.every(x => x === 'genre' || x === 'link') ? 0.5 : 1; };
+    const key = r => genreOnly(r) ? '1' + r.artist + r.title : '0' + r.vendor + r.author_website + r.author_email + r.rel_path;
     const queue = S.catalog.sequences.filter(r => tasksFor(r).length).sort((a, b) => key(a).localeCompare(key(b)));
     // group related sequences together; genre-only work is light, so five times as many fit in a batch
     const size = +cfg.ai_batch || 10, batches = []; let cur = [], w = 0;
-    for (const r of queue) { const wt = genreOnly(r) ? 0.2 : 1; if (cur.length && w + wt > size) { batches.push(cur); cur = []; w = 0; } cur.push(r); w += wt; }
+    for (const r of queue) { const wt = weight(r); if (cur.length && w + wt > size) { batches.push(cur); cur = []; w = 0; } cur.push(r); w += wt; }
     if (cur.length) batches.push(cur);
     const total = batches.length;
     if (!queue.length) { aiLog('Nothing to do: every selected task is already handled.', 'ok'); return; }
@@ -1355,6 +1402,10 @@ function applyProposal(p) {
   if (p.type === 'details') rels.forEach(rel => Object.assign(ov(rel), p.data));
   if (p.type === 'vendor') rels.forEach(rel => { ov(rel).vendor = p.data.vendor; });
   if (p.type === 'art') rels.forEach(rel => { ov(rel).art_url = p.data.url; });
+  if (p.type === 'link') {
+    rels.forEach(rel => Object.assign(ov(rel), { seq_url: p.data.url, seq_url_by: 'claude' }));
+    p.seq_ids.map(recById).filter(Boolean).forEach(r => { r.seq_url = p.data.url; r.seq_url_source = 'claude'; });
+  }
   if (p.type === 'genre') {
     rels.forEach(rel => Object.assign(ov(rel), { genre: p.data.genre, genre_by: 'claude' }));
     if (!cfg.genres.some(g => g.toLowerCase() === p.data.genre.toLowerCase())) cfg.genres.push(p.data.genre);
@@ -1371,7 +1422,7 @@ async function decide(ps, accept) {
   saveCfg(); await saveProposals();
   if (accept && ps.length) {
     if (S.seqs) await assemble(false);
-    else { await idb.set('kv', 'catalog', S.catalog); show(S.catalog); if (ps.some(p => p.type !== 'genre')) toast('Rescan to see all accepted changes.', 5000); }
+    else { await idb.set('kv', 'catalog', S.catalog); show(S.catalog); if (ps.some(p => p.type !== 'genre' && p.type !== 'link')) toast('Rescan to see all accepted changes.', 5000); }
   }
   renderReview();
 }
@@ -1379,7 +1430,7 @@ function updateReviewButton() {
   const n = S.proposals.filter(p => p.status === 'pending').length;
   $('#openReview').hidden = !n; $('#openReview').textContent = `Review suggestions (${n})`;
 }
-const TYPE_LABEL = { song: 'Song', no_song: 'No song needed', details: 'Details', vendor: 'Vendor', vendor_rule: 'Vendor rule', art: 'Album art', genre: 'Genre' };
+const TYPE_LABEL = { song: 'Song', no_song: 'No song needed', details: 'Details', vendor: 'Vendor', vendor_rule: 'Vendor rule', art: 'Album art', genre: 'Genre', link: 'Sequence page' };
 function renderReview() {
   const pend = S.proposals.filter(p => p.status === 'pending').sort((a, b) => b.confidence - a.confidence);
   $('#rIntro').textContent = pend.length ? `${pend.length} suggestion${pend.length > 1 ? 's' : ''} waiting. Accepted changes are kept across rescans, and you can undo them from any sequence's details.` : 'No suggestions waiting.';
@@ -1393,6 +1444,8 @@ function renderReview() {
     if (p.type === 'vendor') what = `${who}: vendor ${esc(p.data.vendor)}`;
     if (p.type === 'vendor_rule') what = `${esc(p.data.vendor)} for ${who}<div class="sub">Rule: ${esc(p.data.patterns.join(', '))}</div>`;
     if (p.type === 'art') what = `<img src="${esc(p.data.url)}" alt="">${who}`;
+    if (p.type === 'link') { let lbl = p.data.url; try { const u = new URL(p.data.url); lbl = u.hostname.replace(/^www\./, '') + decodeURIComponent(u.pathname); } catch {}
+      what = `${who}: <a href="${esc(p.data.url)}" target="_blank" rel="noopener">${esc(lbl)}</a>${p.data.other_site ? ' <span class="fine">(not on the vendor\'s own site)</span>' : ''}`; }
     if (p.type === 'genre') what = `${who}${first?.artist ? ` (${esc(first.artist)})` : ''}: <span class="gdot" style="background:${gcol(p.data.genre)}"></span>${esc(p.data.genre)}${p.data.is_new ? ' <span class="fine">(new genre)</span>' : ''}`;
     const lvl = p.confidence >= 0.9 ? 'hi' : p.confidence >= 0.75 ? 'mid' : 'lo';
     return `<li class="prop ${lvl}"><div class="what">${TYPE_LABEL[p.type]}: ${what}</div>
@@ -1414,7 +1467,7 @@ $('#openReview').onclick = openReview; $('#aiReview').onclick = openReview;
 function openAI() {
   if (!S.seqs) return toast(S.show ? 'Rescan first so Claude can look through your folders.' : 'Choose your show folder first.', 5000);
   const c = taskCounts();
-  const labels = { song: 'Find missing or uncertain songs', vendor: 'Identify vendors', details: 'Fill in missing artists', art: 'Find album art', genre: 'Assign genres' };
+  const labels = { song: 'Find missing or uncertain songs', vendor: 'Identify vendors', details: 'Fill in missing artists', art: 'Find album art', genre: 'Assign genres', link: "Find each sequence's page on the vendor's website (uses web search)" };
   $('#aiTasks').innerHTML = Object.keys(labels).map(k => `<label class="check"><input type="checkbox" data-task="${k}" ${cfg.ai_tasks[k] ? 'checked' : ''} ${c[k] ? '' : 'disabled'}><span>${labels[k]} (${c[k]})</span></label>`).join('');
   $('#aiKey').value = apiKey(); $('#aiRemember').checked = !!store.get('apikey', '');
   $('#aiModel').value = cfg.ai_model; $('#aiBatch').value = String(cfg.ai_batch); $('#aiWeb').checked = cfg.ai_web; $('#aiAuto').checked = cfg.ai_auto;
@@ -1688,7 +1741,7 @@ function setView(v) {
 }
 
 // ------------------------------------------------------------------ sequence details + fixing songs
-let navIds = [], curId = null, player = null, picked = null;
+let navIds = [], curId = null, player = null, picked = null, changeOpen = null;
 function stopPlayer() { if (player) { player.pause(); URL.revokeObjectURL(player.src); player = null; } document.querySelectorAll('[data-listen].playing').forEach(b => { b.classList.remove('playing'); b.textContent = 'Listen'; }); }
 $('#detail').addEventListener('close', () => { stopPlayer(); picked = null; });
 
@@ -1713,6 +1766,30 @@ const lenNote = (r, d) => {
   if (diff <= 3) return `<span class="len-ok">${mmss(d)}, within ${Math.round(diff)} seconds of the sequence</span>`;
   return `<span class="len-off">${mmss(d)}, but the sequence is ${mmss(r.duration)}. Possibly a different version</span>`;
 };
+function seqSearchUrl(r) {
+  const host = vendorHost(r), enc = encodeURIComponent;
+  if (host) return [`Search ${host}`, `https://www.google.com/search?q=${enc(`site:${host} "${r.title}"`)}`];
+  if (r.vendor && r.vendor !== 'Unknown vendor') return [`Search for it`, `https://www.google.com/search?q=${enc(`"${r.vendor}" xlights "${r.title}"`)}`];
+  return null;
+}
+function seqPageFact(r) {
+  const src = { file: 'from the sequence file', claude: 'found by Claude', you: 'added by you' }[r.seq_url_source] || '';
+  if (r.seq_url) {
+    let label = r.seq_url; try { const u = new URL(r.seq_url); label = u.hostname.replace(/^www\./, '') + decodeURIComponent(u.pathname).replace(/\/$/, ''); } catch {}
+    return `<dt>Sequence page</dt><dd><a href="${esc(r.seq_url)}" target="_blank" rel="noopener">${esc(label)}</a>${src ? ` <span class="fine">(${src})</span>` : ''}
+      <span class="inline-acts"><button class="btn sm" data-act="editlink">Change</button><button class="btn sm" data-act="removelink">Remove</button></span></dd>`;
+  }
+  const s = seqSearchUrl(r);
+  return `<dt>Sequence page</dt><dd><span class="inline-acts">${s ? `<a class="btn sm" href="${esc(s[1])}" target="_blank" rel="noopener">${esc(s[0])}</a>` : ''}<button class="btn sm" data-act="editlink">Add link</button></span></dd>`;
+}
+async function setSeqUrl(r, url, by = 'you') {
+  const ov = (cfg.overrides[r.rel_path] ||= {});
+  if (url) Object.assign(ov, { seq_url: url, seq_url_by: by });
+  else { delete ov.seq_url; delete ov.seq_url_by; if (!Object.keys(ov).length) delete cfg.overrides[r.rel_path]; }
+  r.seq_url = url; r.seq_url_source = url ? by : '';
+  saveCfg(); await idb.set('kv', 'catalog', S.catalog);
+}
+
 function songLinks(r) {
   const q = [r.artist, r.title].filter(Boolean).join(' '), enc = encodeURIComponent, links = [];
   if (/^https?:\/\//i.test(r.music_url)) links.push(["Vendor's link for this song", r.music_url]);
@@ -1768,6 +1845,7 @@ function fixSection(r) {
       <div class="actions">${canSave ? `<button class="btn primary" data-act="saveinto">Save into show folder and use it</button><button class="btn" data-act="linkonly">Use without copying</button>` : `<button class="btn primary" data-act="linkonly">Use this file</button>`}<button class="btn" data-act="cancelpick">Cancel</button></div></div>`;
   }
   const guess = r.media_status === 'guess' && r.media_path;
+  if (!problem && changeOpen !== r.id) return `<div class="actions" style="margin:0 0 18px"><button class="btn sm" data-act="changesong">Change the song</button></div>`;
   return `<div class="fix">
     ${guess ? `<h3>Is this the right song?</h3><div class="cand" data-path="${esc(r.media_path)}"><div><div class="nm">${esc(baseAny(r.media_path))}</div><div class="tg">${esc(dirOf(r.media_path) || S.show.name)}</div><div class="tg" data-len>${r.song_duration ? lenNote(r, r.song_duration) : ''}</div></div>
       <div class="btns"><button class="btn sm" data-listen="${esc(r.media_path)}">Listen</button><button class="btn sm primary" data-use="${esc(r.media_path)}">Yes, use it</button></div></div>` : ''}
@@ -1802,7 +1880,7 @@ function renderDetail() {
         ${r.media_status === 'exempt' ? '' : fixSection(r)}
         <dl class="facts">
           ${fact('Vendor', esc(r.vendor))}${fact('Author', r.author && r.author !== r.vendor ? esc(r.author) : '')}
-          ${fact('Website', site)}${fact('Email', esc(r.author_email))}
+          ${seqPageFact(r)}${fact('Website', site)}${fact('Email', esc(r.author_email))}
           ${fact('Length', mmss(r.duration) + lenCmp)}${fact('Timing', esc(r.timing))}${fact('Type', esc(r.seq_type))}
           ${fact('xLights', esc(r.xlights_version))}${fact('File', esc(r.rel_path))}
           ${fact('Format', r.legacy ? 'Older xLights sequence (.xml)' : '')}${fact('Zip', r.in_zip ? esc(r.in_zip) + ' (not unzipped)' : '')}
@@ -1900,6 +1978,16 @@ $('#dBody').addEventListener('click', async e => {
     inp.click();
   }
   if (a === 'cancelpick') { picked = null; renderDetail(); }
+  if (a === 'changesong') { changeOpen = r.id; renderDetail(); }
+  if (a === 'editlink') {
+    const v = prompt(`Web address of ${r.title} on ${r.vendor}'s website`, r.seq_url || '');
+    if (v === null) return;
+    const url = v.trim(); if (!url) return;
+    let ok = ''; try { const u = new URL(/^https?:\/\//i.test(url) ? url : 'https://' + url); if (/^https?:$/.test(u.protocol) && !/\s/.test(url) && /^[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$/i.test(u.hostname)) ok = u.href; } catch {}
+    if (!ok) return toast("That doesn't look like a web address.", 4000);
+    await setSeqUrl(r, ok); renderDetail(); toast('Sequence page saved');
+  }
+  if (a === 'removelink') { await setSeqUrl(r, ''); renderDetail(); toast('Link removed'); }
   if (a === 'saveinto') {
     try {
       const entry = await saveIntoShow(r, picked.file); if (!entry) return;
