@@ -73,6 +73,25 @@ select,.btn{background:var(--deep);border:1px solid var(--wire);border-radius:va
 .seg button{background:var(--deep);border:0;padding:9px 12px;cursor:pointer;color:var(--mist)}
 .seg button[aria-pressed="true"]{background:var(--wire);color:var(--frost)}
 .count{color:var(--mist);font-size:.9rem;margin-left:auto}
+.chiprow{display:flex;gap:6px;overflow-x:auto;padding-bottom:12px;scrollbar-width:thin}
+.chip{flex:none;display:inline-flex;align-items:center;gap:6px;background:var(--deep);border:1px solid var(--wire);color:var(--mist);border-radius:999px;padding:5px 12px;cursor:pointer;font-size:.9rem;white-space:nowrap}
+.chip[aria-pressed="true"]{background:var(--frost);color:var(--night);border-color:var(--frost)}
+.chip .n{opacity:.7;font-variant-numeric:tabular-nums}
+.gdot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;flex:none}
+.chip .gdot{margin-right:0}
+.gen{display:flex;align-items:center;color:var(--mist);font-size:.85rem;margin-top:3px}
+#selectMode[aria-pressed="true"]{background:var(--frost);color:var(--night);border-color:var(--frost)}
+.card.sel .art{outline:3px solid var(--bulb);outline-offset:3px}
+.card.sel .art::after{content:"✓";position:absolute;top:8px;right:8px;width:28px;height:28px;border-radius:50%;background:var(--bulb);color:#1b1405;display:grid;place-items:center;font-weight:700}
+tr.row.sel td{background:rgba(255,200,97,.14)}
+.bulk{position:fixed;left:0;right:0;bottom:0;z-index:15;background:var(--deep);border-top:1px solid var(--wire);box-shadow:0 -8px 24px rgba(0,0,0,.35)}
+.bulk .wrap{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding-top:12px;padding-bottom:12px}
+.bulkset{display:inline-flex;gap:8px;align-items:center;margin-left:auto}
+body.selecting main.wrap{padding-bottom:120px}
+body.selecting .toast{bottom:96px}
+.card .meta{margin-top:auto}
+.genrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:-8px 0 16px}
+.genrow label{color:var(--mist)}
 
 /* grid */
 main.wrap{padding-top:28px;padding-bottom:80px}
@@ -215,6 +234,7 @@ dialog{max-height:94vh;overflow:auto}
       <option value="title">Sort by song</option>
       <option value="artist">Sort by artist</option>
       <option value="vendor">Sort by vendor</option>
+      <option value="genre">Sort by genre</option>
       <option value="duration">Sort by length</option>
       <option value="modified">Recently changed</option>
     </select>
@@ -222,7 +242,18 @@ dialog{max-height:94vh;overflow:auto}
       <button id="vGrid" aria-pressed="true">Covers</button>
       <button id="vList" aria-pressed="false">List</button>
     </div>
+    <button class="btn" id="selectMode" aria-pressed="false">Select</button>
     <span class="count" id="count" aria-live="polite"></span>
+  </div>
+  <div class="wrap chiprow" id="genreChips" role="group" aria-label="Filter by genre"></div>
+</div>
+<div class="bulk" id="bulk" hidden>
+  <div class="wrap">
+    <strong id="bulkCount">0 selected</strong>
+    <button class="btn sm" id="bulkAll">Select all shown</button>
+    <button class="btn sm" id="bulkNone">Clear</button>
+    <label class="bulkset">Set genre <select id="bulkGenre"></select></label>
+    <button class="btn sm primary" id="bulkDone">Done</button>
   </div>
 </div>
 
@@ -305,6 +336,9 @@ dialog{max-height:94vh;overflow:auto}
       <small>One vendor per line: name = patterns, separated by commas. Patterns are checked against the sequence author, email, website and path.</small></label>
     <label class="check"><input type="checkbox" id="sFolderVendor"><span>Use the top folder name as the vendor when a sequence doesn't name one</span></label>
     <label class="check"><input type="checkbox" id="sOnline"><span>Look up missing album art online during every scan (Apple Music search)</span></label>
+    <label class="field"><span>Genres</span>
+      <textarea id="sGenres" spellcheck="false" style="min-height:160px"></textarea>
+      <small>One per line, in the order you want them listed. Removing a genre here doesn't remove it from sequences that already have it.</small></label>
     <label class="field"><span>Google Drive client ID</span><input type="text" id="sClient" spellcheck="false" placeholder="1234567890-abc.apps.googleusercontent.com"><small>Needed once for uploading. The README explains how to get one.</small></label>
     <label class="field"><span>Google Drive folder name</span><input type="text" id="sFolderName" spellcheck="false"></label>
     <div class="actions">
@@ -341,7 +375,10 @@ const DEFAULTS = {
   skip_folders: ['__MACOSX', '.*', '$RECYCLE.BIN', 'System Volume Information'], include_backups: false, look_in_zips: true,
   fetch_online_art: false, overrides: {},
   gdrive_client_id: '', gdrive_folder_name: 'xLights Catalogue', gdrive_folder_id: '',
-  ai_model: 'claude-sonnet-5-5', ai_batch: 10, ai_tasks: { song: true, vendor: true, details: true, art: true }, ai_web: true, ai_auto: false,
+  ai_model: 'claude-sonnet-5-5', ai_batch: 10, ai_tasks: { song: true, vendor: true, details: true, art: true, genre: true }, ai_web: true, ai_auto: false,
+  genres: ['Classic Christmas', "Rock 'n' Roll & Oldies", 'Christmas Pop', 'Country', 'Rock & Metal', 'R&B & Soul', 'Jazz & Swing',
+           'Orchestral & Instrumental', 'Religious & Choral', 'A Cappella', 'Kids & Movies', 'Electronic & Dance', 'Hip-Hop',
+           'Latin', 'Novelty & Comedy', 'Halloween', 'Other Holidays', 'Show Elements'],
 };
 const STATUS = {ok:'Song found', guess:'Check song', missing:'No song', exempt:'No song needed'};
 
@@ -501,7 +538,7 @@ function zipListCached(file, key) { if (!zipLists.has(key)) zipLists.set(key, zi
 
 // ------------------------------------------------------------------ walking the folders
 // A source is {kind:'handle', handle, name} (Chrome/Edge, remembered) or {kind:'files', files, name} (all browsers)
-const S = { show: null, music: [], seqs: null, index: null, catalog: null, report: null, tree: null, proposals: [] };
+const S = { show: null, music: [], seqs: null, index: null, catalog: null, report: null, tree: null, proposals: [], genreSel: new Set(), selecting: false, picked: new Set() };
 
 function skipReason(name) {
   if (!cfg.include_backups && BACKUP_DIRS.includes(name.toLowerCase())) return 'xLights backup folder';
@@ -748,18 +785,18 @@ async function audioMeta(seq, media, needDuration) {
   if (media.packaged) key = `${seq.entry.path}::${media.path}|${seq.key}`;
   else { const f = await media.getFile(); blob = f; key = `${media.path}|${f.size}|${f.lastModified}`; }
   let m = await idb.get('audio', key);
-  if (m && (m.duration || !needDuration)) return m;
+  if (m && 'genre' in m && (m.duration || !needDuration)) return m;
   if (media.packaged) {
     const f = await seq.entry.getFile(), list = await zipListCached(f, seq.key);
     const e = list.find(x => x.name === media.path);
     blob = new Blob([await zipRead(f, e)], { type: mimeFor(media.path) });
   } else if (!blob.type) blob = new Blob([blob], { type: mimeFor(media.name) });
-  if (!m) {
+  if (!m || !('genre' in m)) {
     await loadScript(LIBS.tags);
     const t = await readTags(blob);
-    let art = '';
-    if (t.picture?.data) art = await thumbnail(new Blob([new Uint8Array(t.picture.data)], { type: t.picture.format || 'image/jpeg' }));
-    m = { title: t.title || '', artist: t.artist || t.TPE2?.data || '', album: t.album || '', duration: 0, art };
+    let art = m?.art || '';
+    if (!art && t.picture?.data) art = await thumbnail(new Blob([new Uint8Array(t.picture.data)], { type: t.picture.format || 'image/jpeg' }));
+    m = { title: t.title || '', artist: t.artist || t.TPE2?.data || '', album: t.album || '', genre: String(t.genre || '').trim(), duration: m?.duration || 0, art };
   }
   if (needDuration && !m.duration) m.duration = await mediaDuration(blob);
   await idb.set('audio', key, m);
@@ -776,6 +813,25 @@ function itunesSearch(term, limit = 1) {
   });
 }
 const bigArt = u => u ? u.replace('100x100bb', '600x600bb') : '';
+// Map a song file's own genre tag onto your genre list. Vague tags ("Holiday", "Christmas") are ignored.
+const GENRE_MAP = [
+  [/country|bluegrass|americana|western/, 'Country'], [/jazz|swing|big ?band|crooner|vocal standards/, 'Jazz & Swing'],
+  [/r&b|rnb|soul|motown|funk|doo.?wop/, 'R&B & Soul'], [/metal|hard rock|punk|alternative|grunge|^rock$|rock$/, 'Rock & Metal'],
+  [/rock.?n.?roll|rockabilly|oldies|50s|60s/, "Rock 'n' Roll & Oldies"], [/hip.?hop|rap/, 'Hip-Hop'],
+  [/electronic|dance|edm|techno|house|trance|dubstep|electro/, 'Electronic & Dance'], [/a cappella|acapella/, 'A Cappella'],
+  [/gospel|christian|worship|religious|choral|hymn|sacred|choir/, 'Religious & Choral'],
+  [/classical|orchestra|symphon|instrumental|new age|score|piano/, 'Orchestral & Instrumental'],
+  [/children|kids|family/, 'Kids & Movies'], [/latin|reggaeton|salsa|mariachi|tejano/, 'Latin'],
+  [/comedy|novelty|parody/, 'Novelty & Comedy'], [/halloween|horror|spooky/, 'Halloween'], [/^pop$|pop$|^pop\b/, 'Christmas Pop'],
+];
+function mapGenre(raw) {
+  const g = String(raw || '').toLowerCase().replace(/^\(\d+\)/, '').trim();
+  if (!g) return '';
+  for (const [re, name] of GENRE_MAP) if (re.test(g)) { const hit = cfg.genres.find(x => x.toLowerCase() === name.toLowerCase()); if (hit) return hit; }
+  return '';
+}
+// genres in your list get evenly spaced colours (golden angle); others fall back to a colour from their name
+const gcol = g => { const i = cfg.genres.indexOf(g); return `hsl(${i >= 0 ? Math.round((i * 137.508 + 8) % 360) : hue(g)} 65% 63%)`; };
 
 function resolveVendor(head, rel) {
   const author = head.author || '', email = head['author-email'] || '', site = head['author-website'] || '';
@@ -914,6 +970,11 @@ async function assemble(withProgress) {
       abs_path: `${S.show.name}/${rel}`, folder: dirOf(rel), packaged: ext(seq.entry.name) === '.xsqz',
       in_zip: seq.entry.inZip || '', legacy: !!seq.entry.legacy,
       size: seq.size, modified: new Date(seq.modified - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 19),
+      ...(() => {
+        if (ov.genre) { if (ov.genre_by === 'claude') ai.push('genre'); return { genre: ov.genre, genre_source: ov.genre_by || 'you' }; }
+        const g = mapGenre(am.genre); return { genre: g, genre_source: g ? 'tag' : '' };
+      })(),
+      song_genre_tag: am.genre || '',
       _art: art, art: '', art_source: artSrc, error: seq.error, ai, ...media,
     };
   });
@@ -972,6 +1033,7 @@ Each sequence you receive lists the tasks to do for it:
 - "vendor": work out the business that sold the sequence. The author, email domain, website and folder names are clues. Use web search (if available) to confirm the vendor's proper business name. Prefer propose_vendor_rule with patterns like "*domain.com*" or "Vendors/Name/*" so that every sequence from that vendor is covered, and reuse an existing vendor name exactly when it is the same company. Use propose_vendor only for one-off cases.
 - "details": fill in a missing artist (and fix an obviously wrong title) from audio tags, the file name, or a web search. Only propose values you are confident about.
 - "art": find album art with search_album_art and propose an image whose artist and title match. Prefer the original studio release. Skip if nothing matches well.
+- "genre": choose one genre from the list given in the batch, using propose_genres (one call can cover many sequences). Judge by the specific recording, not the song: "Jingle Bell Rock" by Bobby Helms is Rock 'n' Roll & Oldies but by Hall & Oates is Christmas Pop. Guide: crooners and vintage standards (Bing Crosby, Nat King Cole, Frank Sinatra, Andy Williams, Perry Como) are Classic Christmas; 1950s-60s rock 'n' roll and girl groups (Brenda Lee, Bobby Helms, the Ronettes) are Rock 'n' Roll & Oldies; modern pop (Mariah Carey, Wham!, Ariana Grande, Michael Bublé's pop covers) is Christmas Pop; Trans-Siberian Orchestra is Rock & Metal; Mannheim Steamroller and film scores are Orchestral & Instrumental; Pentatonix is A Cappella; songs from films and children's shows (Frozen, The Grinch, Rudolph) are Kids & Movies; intros, countdowns, announcements and loops without music are Show Elements. If the artist is unknown, use the song title, file and folder names, audio tags or a web search. Only suggest a genre outside the list when none fits at all.
 
 Rules:
 - Only use file paths returned by your tools, and only image URLs returned by search_album_art. Never invent them.
@@ -990,6 +1052,7 @@ const AI_TOOLS = [
   { name: 'propose_details', description: 'Suggest a corrected title, artist and/or album for a sequence.', input_schema: { type: 'object', properties: { sequence_id: { type: 'string' }, title: { type: 'string' }, artist: { type: 'string' }, album: { type: 'string' }, confidence: { type: 'number' }, reason: { type: 'string' } }, required: ['sequence_id', 'confidence', 'reason'] } },
   { name: 'propose_vendor', description: 'Suggest the vendor for specific sequences.', input_schema: { type: 'object', properties: { sequence_ids: { type: 'array', items: { type: 'string' } }, vendor: { type: 'string' }, confidence: { type: 'number' }, reason: { type: 'string' } }, required: ['sequence_ids', 'vendor', 'confidence', 'reason'] } },
   { name: 'propose_vendor_rule', description: 'Suggest a vendor rule: glob patterns checked against author, email, website and path of every sequence. Patterns must be specific (e.g. "*acmepixel.com*", "Vendors/Acme/*").', input_schema: { type: 'object', properties: { vendor: { type: 'string' }, patterns: { type: 'array', items: { type: 'string' } }, confidence: { type: 'number' }, reason: { type: 'string' } }, required: ['vendor', 'patterns', 'confidence', 'reason'] } },
+  { name: 'propose_genres', description: 'Suggest a genre for one or more sequences. Use genres from the list in the batch.', input_schema: { type: 'object', properties: { items: { type: 'array', items: { type: 'object', properties: { sequence_id: { type: 'string' }, genre: { type: 'string' }, confidence: { type: 'number' }, reason: { type: 'string' } }, required: ['sequence_id', 'genre', 'confidence', 'reason'] } } }, required: ['items'] } },
   { name: 'propose_album_art', description: 'Suggest album art for a sequence, using an image_url from search_album_art.', input_schema: { type: 'object', properties: { sequence_id: { type: 'string' }, image_url: { type: 'string' }, confidence: { type: 'number' }, reason: { type: 'string' } }, required: ['sequence_id', 'image_url', 'confidence', 'reason'] } },
   { name: 'finish', description: 'Call once every sequence in this batch has been handled.', input_schema: { type: 'object', properties: { summary: { type: 'string' }, unresolved: { type: 'array', items: { type: 'object', properties: { sequence_id: { type: 'string' }, why: { type: 'string' } } } } }, required: ['summary'] } },
 ];
@@ -1030,7 +1093,8 @@ function seqInfo(r) {
     song_link: r.music_url || null, notes: r.comment || null, sequence_type: r.seq_type || null,
     sequence_length: r.duration ? `${mmssS(r.duration)} (${r.duration}s)` : 'unknown',
     expected_song_file: r.media_raw || null, song_status: r.media_status, current_song: r.media_path || null,
-    current_song_length: r.song_duration ? `${mmssS(r.song_duration)} (${r.song_duration}s)` : null, note: r.media_note || null, has_album_art: !!r.art };
+    current_song_length: r.song_duration ? `${mmssS(r.song_duration)} (${r.song_duration}s)` : null, note: r.media_note || null, has_album_art: !!r.art,
+    genre: r.genre || null, genre_tag_in_song_file: r.song_genre_tag || null };
 }
 function vendorRuleMatches(patterns) {
   return S.catalog.sequences.filter(r => [r.author, r.author_email, r.author_website, r.rel_path].some(f => f && globMatch(f, patterns)));
@@ -1042,11 +1106,12 @@ function tasksFor(r) {
       && !AI.runRules.some(p => [r.author, r.author_email, r.author_website, r.rel_path].some(f => f && globMatch(f, p)))) t.push('vendor');
   if (want.details && !r.artist && !ov.artist) t.push('details');
   if (want.art && !r.art && !ov.art_url) t.push('art');
+  if (want.genre && !r.genre) t.push('genre');
   return t;
 }
 function taskCounts() {
-  const c = { song: 0, vendor: 0, details: 0, art: 0 }, saved = cfg.ai_tasks;
-  cfg.ai_tasks = { song: true, vendor: true, details: true, art: true };
+  const c = { song: 0, vendor: 0, details: 0, art: 0, genre: 0 }, saved = cfg.ai_tasks;
+  cfg.ai_tasks = { song: true, vendor: true, details: true, art: true, genre: true };
   for (const r of S.catalog?.sequences || []) for (const t of tasksFor(r)) c[t]++;
   cfg.ai_tasks = saved; return c;
 }
@@ -1155,6 +1220,20 @@ async function runTool(name, input, batchIds) {
       addProposal({ type: 'art', seq_ids: [r.id], data: { url: u }, confidence: conf(input.confidence), reason: input.reason });
       aiLog(`Suggested album art for ${r.title}`, 'me'); return { ok: true };
     }
+    case 'propose_genres': {
+      let ok = 0; const errs = [];
+      for (const it of (input.items || []).slice(0, 100)) {
+        try {
+          const r = needSeq(it.sequence_id), g = String(it.genre || '').trim();
+          if (!g) throw new Error('missing genre');
+          const known = cfg.genres.find(x => x.toLowerCase() === g.toLowerCase());
+          addProposal({ type: 'genre', seq_ids: [r.id], data: { genre: known || g, is_new: !known }, confidence: conf(it.confidence), reason: it.reason || '' });
+          ok++;
+        } catch (e) { errs.push(`${it.sequence_id}: ${e.message}`); }
+      }
+      if (ok) aiLog(`Suggested genres for ${ok} sequence${ok > 1 ? 's' : ''}`, 'me');
+      return { ok, errors: errs.length ? errs : undefined };
+    }
     case 'finish': return { ok: true };
   }
   return { error: `Unknown tool ${name}` };
@@ -1177,7 +1256,8 @@ async function runBatch(batch, n, of) {
   const messages = [{ role: 'user', content:
     `Batch ${n} of ${of}. Show folder: "${S.show.name}". Music folders: ${S.music.map(m => `"music:${m.name}"`).join(', ') || 'none'}. `
     + `${fmtN(S.index.count)} song/video files are indexed.\n`
-    + `Vendor names already in use: ${JSON.stringify([...new Set(vendorsInUse)].slice(0, 80))}\n\n`
+    + `Vendor names already in use: ${JSON.stringify([...new Set(vendorsInUse)].slice(0, 80))}\n`
+    + `Genres to choose from: ${JSON.stringify(cfg.genres)}\n\n`
     + `<sequences>\n${JSON.stringify(payload, null, 1)}\n</sequences>` }];
   const custom = AI_TOOLS.map((t, i) => i === AI_TOOLS.length - 1 ? { ...t, cache_control: { type: 'ephemeral' } } : t);
   const tools = cfg.ai_web && !AI.noWeb ? [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }, ...custom] : custom;
@@ -1233,13 +1313,18 @@ async function runAgent() {
   const before = S.proposals.length;
   try {
     // group related sequences together so vendor lookups cover whole vendors at once
-    const queue = S.catalog.sequences.filter(r => tasksFor(r).length)
-      .sort((a, b) => (a.author_website + a.author_email + a.vendor + a.rel_path).localeCompare(b.author_website + b.author_email + b.vendor + b.rel_path));
-    const size = +cfg.ai_batch || 10, total = Math.ceil(queue.length / size);
+    const genreOnly = r => { const t = tasksFor(r); return t.length === 1 && t[0] === 'genre'; };
+    const key = r => genreOnly(r) ? '1' + r.artist + r.title : '0' + r.author_website + r.author_email + r.vendor + r.rel_path;
+    const queue = S.catalog.sequences.filter(r => tasksFor(r).length).sort((a, b) => key(a).localeCompare(key(b)));
+    // group related sequences together; genre-only work is light, so five times as many fit in a batch
+    const size = +cfg.ai_batch || 10, batches = []; let cur = [], w = 0;
+    for (const r of queue) { const wt = genreOnly(r) ? 0.2 : 1; if (cur.length && w + wt > size) { batches.push(cur); cur = []; w = 0; } cur.push(r); w += wt; }
+    if (cur.length) batches.push(cur);
+    const total = batches.length;
     if (!queue.length) { aiLog('Nothing to do: every selected task is already handled.', 'ok'); return; }
     aiLog(`${queue.length} sequences need attention. Working in ${total} batch${total > 1 ? 'es' : ''}.`);
-    for (let i = 0, n = 1; i < queue.length && !AI.abort.signal.aborted; i += size, n++) {
-      const batch = queue.slice(i, i + size).map(r => ({ r, tasks: tasksFor(r) })).filter(b => b.tasks.length);
+    for (let i = 0, n = 1; i < batches.length && !AI.abort.signal.aborted; i++, n++) {
+      const batch = batches[i].map(r => ({ r, tasks: tasksFor(r) })).filter(b => b.tasks.length);
       if (!batch.length) continue;
       aiLog(`Batch ${n} of ${total}: ${batch.map(b => b.r.title).join(', ')}`, 'me');
       await runBatch(batch, n, total);
@@ -1270,6 +1355,11 @@ function applyProposal(p) {
   if (p.type === 'details') rels.forEach(rel => Object.assign(ov(rel), p.data));
   if (p.type === 'vendor') rels.forEach(rel => { ov(rel).vendor = p.data.vendor; });
   if (p.type === 'art') rels.forEach(rel => { ov(rel).art_url = p.data.url; });
+  if (p.type === 'genre') {
+    rels.forEach(rel => Object.assign(ov(rel), { genre: p.data.genre, genre_by: 'claude' }));
+    if (!cfg.genres.some(g => g.toLowerCase() === p.data.genre.toLowerCase())) cfg.genres.push(p.data.genre);
+    p.seq_ids.map(recById).filter(Boolean).forEach(r => { r.genre = p.data.genre; r.genre_source = 'claude'; if (!r.ai.includes('genre')) r.ai.push('genre'); indexText(r); });
+  }
   if (p.type === 'vendor_rule') {
     const ex = cfg.vendors.find(v => v.name.toLowerCase() === p.data.vendor.toLowerCase());
     if (ex) ex.match = [...new Set([...ex.match, ...p.data.patterns])]; else cfg.vendors.push({ name: p.data.vendor, match: p.data.patterns });
@@ -1279,14 +1369,17 @@ function applyProposal(p) {
 async function decide(ps, accept) {
   ps.forEach(p => accept ? applyProposal(p) : (p.status = 'rejected'));
   saveCfg(); await saveProposals();
-  if (accept && ps.length) { if (S.seqs) await assemble(false); else toast('Rescan to see accepted changes.', 5000); }
+  if (accept && ps.length) {
+    if (S.seqs) await assemble(false);
+    else { await idb.set('kv', 'catalog', S.catalog); show(S.catalog); if (ps.some(p => p.type !== 'genre')) toast('Rescan to see all accepted changes.', 5000); }
+  }
   renderReview();
 }
 function updateReviewButton() {
   const n = S.proposals.filter(p => p.status === 'pending').length;
   $('#openReview').hidden = !n; $('#openReview').textContent = `Review suggestions (${n})`;
 }
-const TYPE_LABEL = { song: 'Song', no_song: 'No song needed', details: 'Details', vendor: 'Vendor', vendor_rule: 'Vendor rule', art: 'Album art' };
+const TYPE_LABEL = { song: 'Song', no_song: 'No song needed', details: 'Details', vendor: 'Vendor', vendor_rule: 'Vendor rule', art: 'Album art', genre: 'Genre' };
 function renderReview() {
   const pend = S.proposals.filter(p => p.status === 'pending').sort((a, b) => b.confidence - a.confidence);
   $('#rIntro').textContent = pend.length ? `${pend.length} suggestion${pend.length > 1 ? 's' : ''} waiting. Accepted changes are kept across rescans, and you can undo them from any sequence's details.` : 'No suggestions waiting.';
@@ -1300,6 +1393,7 @@ function renderReview() {
     if (p.type === 'vendor') what = `${who}: vendor ${esc(p.data.vendor)}`;
     if (p.type === 'vendor_rule') what = `${esc(p.data.vendor)} for ${who}<div class="sub">Rule: ${esc(p.data.patterns.join(', '))}</div>`;
     if (p.type === 'art') what = `<img src="${esc(p.data.url)}" alt="">${who}`;
+    if (p.type === 'genre') what = `${who}${first?.artist ? ` (${esc(first.artist)})` : ''}: <span class="gdot" style="background:${gcol(p.data.genre)}"></span>${esc(p.data.genre)}${p.data.is_new ? ' <span class="fine">(new genre)</span>' : ''}`;
     const lvl = p.confidence >= 0.9 ? 'hi' : p.confidence >= 0.75 ? 'mid' : 'lo';
     return `<li class="prop ${lvl}"><div class="what">${TYPE_LABEL[p.type]}: ${what}</div>
       <div class="btns"><button class="btn primary" data-acc="${p.id}">Accept</button><button class="btn" data-rej="${p.id}">Reject</button></div>
@@ -1320,7 +1414,7 @@ $('#openReview').onclick = openReview; $('#aiReview').onclick = openReview;
 function openAI() {
   if (!S.seqs) return toast(S.show ? 'Rescan first so Claude can look through your folders.' : 'Choose your show folder first.', 5000);
   const c = taskCounts();
-  const labels = { song: 'Find missing or uncertain songs', vendor: 'Identify vendors', details: 'Fill in missing artists', art: 'Find album art' };
+  const labels = { song: 'Find missing or uncertain songs', vendor: 'Identify vendors', details: 'Fill in missing artists', art: 'Find album art', genre: 'Assign genres' };
   $('#aiTasks').innerHTML = Object.keys(labels).map(k => `<label class="check"><input type="checkbox" data-task="${k}" ${cfg.ai_tasks[k] ? 'checked' : ''} ${c[k] ? '' : 'disabled'}><span>${labels[k]} (${c[k]})</span></label>`).join('');
   $('#aiKey').value = apiKey(); $('#aiRemember').checked = !!store.get('apikey', '');
   $('#aiModel').value = cfg.ai_model; $('#aiBatch').value = String(cfg.ai_batch); $('#aiWeb').checked = cfg.ai_web; $('#aiAuto').checked = cfg.ai_auto;
@@ -1435,7 +1529,7 @@ function drawString() {
 
 function show(c) {
   S.catalog = c;
-  c.sequences.forEach(r => { r.ai ||= []; r._q = [r.title, r.artist, r.album, r.vendor, r.author, r.file_name, r.rel_path, r.comment].join(' ').toLowerCase(); });
+  c.sequences.forEach(r => { r.ai ||= []; r.genre ||= ''; indexText(r); });
   $('#landing').hidden = true; $('#bar').hidden = false; $('#headActions').hidden = false;
   $('#rescan').textContent = S.show ? `Rescan ${S.show.name}` : 'Choose show folder';
   const s = c.stats;
@@ -1457,6 +1551,7 @@ function show(c) {
   vSel.innerHTML = '<option value="">All vendors</option>' + [...new Set(c.sequences.map(r => r.vendor))].sort((a, b) => a.localeCompare(b))
     .map(v => `<option value="${esc(v)}">${esc(v)} (${c.sequences.filter(r => r.vendor === v).length})</option>`).join('');
   vSel.value = cur;
+  renderChips();
   $('#foot').textContent = `Show folder: ${c.root}. Catalogue v${c.version}.`;
   updateReviewButton();
   setView(view);
@@ -1477,15 +1572,84 @@ function openReport() {
   $('#reportDlg').showModal();
 }
 
+// ------------------------------------------------------------------ genres
+function indexText(r) { r._q = [r.title, r.artist, r.album, r.vendor, r.genre, r.author, r.file_name, r.rel_path, r.comment].join(' ').toLowerCase(); }
+function genreOptions(cur) {
+  const list = [...cfg.genres]; if (cur && !list.includes(cur)) list.push(cur);
+  return `<option value="">No genre</option>${list.map(g => `<option value="${esc(g)}" ${g === cur ? 'selected' : ''}>${esc(g)}</option>`).join('')}<option value="__new">New genre…</option>`;
+}
+// Resolves the select's value, asking for a name when "New genre…" is chosen. Returns null if cancelled.
+async function pickGenreValue(sel, fallback) {
+  if (sel.value !== '__new') return sel.value;
+  const name = (prompt('Name of the new genre') || '').trim();
+  if (!name) { sel.value = fallback || ''; return null; }
+  return cfg.genres.find(g => g.toLowerCase() === name.toLowerCase()) || name;
+}
+async function setGenre(ids, genre) {
+  if (genre && !cfg.genres.includes(genre)) cfg.genres.push(genre);
+  for (const id of ids) {
+    const r = recById(id); if (!r) continue;
+    const ov = (cfg.overrides[r.rel_path] ||= {});
+    if (genre) Object.assign(ov, { genre, genre_by: 'you' });
+    else { delete ov.genre; delete ov.genre_by; if (!Object.keys(ov).length) delete cfg.overrides[r.rel_path]; }
+    r.genre = genre || mapGenre(r.song_genre_tag); r.genre_source = genre ? 'you' : (r.genre ? 'tag' : '');
+    r.ai = r.ai.filter(x => x !== 'genre'); indexText(r);
+  }
+  saveCfg(); await idb.set('kv', 'catalog', S.catalog);
+  renderChips(); render();
+}
+function renderChips() {
+  const box = $('#genreChips'); if (!S.catalog) return;
+  const counts = new Map();
+  for (const r of S.catalog.sequences) counts.set(r.genre || '', (counts.get(r.genre || '') || 0) + 1);
+  const order = [...cfg.genres, ...[...counts.keys()].filter(g => g && !cfg.genres.includes(g)).sort()].filter(g => counts.get(g));
+  for (const g of [...S.genreSel]) if (!counts.has(g)) S.genreSel.delete(g);
+  const chip = (g, label, n) => `<button class="chip" data-g="${esc(g)}" aria-pressed="${S.genreSel.has(g)}">${g ? `<span class="gdot" style="background:${gcol(g)}"></span>` : ''}${esc(label)} <span class="n">${n}</span></button>`;
+  box.innerHTML = `<button class="chip" data-g="__all" aria-pressed="${!S.genreSel.size}">All genres</button>`
+    + order.map(g => chip(g, g, counts.get(g))).join('') + (counts.get('') ? chip('', 'No genre yet', counts.get('')) : '');
+  box.hidden = !order.length && !counts.get('');
+  $('#bulkGenre').innerHTML = `<option value="" disabled selected>Choose…</option>${genreOptions('').replace('<option value="">No genre</option>', '<option value="__none">Remove genre</option>')}`;
+}
+$('#genreChips').addEventListener('click', e => {
+  const b = e.target.closest('.chip'); if (!b) return;
+  const g = b.dataset.g;
+  if (g === '__all') S.genreSel.clear(); else if (S.genreSel.has(g)) S.genreSel.delete(g); else S.genreSel.add(g);
+  renderChips(); render();
+});
+// select mode: pick several sequences, then set their genre in one go
+function updateBulk() {
+  $('#bulk').hidden = !S.selecting;
+  $('#bulkCount').textContent = `${S.picked.size} selected`;
+  $('#bulkGenre').disabled = !S.picked.size;
+}
+function togglePick(id) { if (S.picked.has(id)) S.picked.delete(id); else S.picked.add(id); updateBulk(); }
+function setSelecting(on) {
+  S.selecting = on; if (!on) S.picked.clear();
+  $('#selectMode').setAttribute('aria-pressed', on); $('#selectMode').textContent = on ? 'Selecting…' : 'Select';
+  document.body.classList.toggle('selecting', on); updateBulk(); render();
+}
+$('#selectMode').onclick = () => setSelecting(!S.selecting);
+$('#bulkDone').onclick = () => setSelecting(false);
+$('#bulkAll').onclick = () => { filtered().forEach(r => S.picked.add(r.id)); updateBulk(); render(); };
+$('#bulkNone').onclick = () => { S.picked.clear(); updateBulk(); render(); };
+$('#bulkGenre').onchange = async e => {
+  const sel = e.target; if (!S.picked.size) return;
+  let g = sel.value === '__none' ? '' : await pickGenreValue(sel, '');
+  if (g === null) { sel.selectedIndex = 0; return; }
+  const n = S.picked.size; await setGenre([...S.picked], g); sel.selectedIndex = 0;
+  toast(g ? `${n} sequence${n > 1 ? 's' : ''} set to ${g}` : `Genre removed from ${n} sequence${n > 1 ? 's' : ''}`);
+};
+
 function filtered() {
   const terms = $('#q').value.toLowerCase().trim().split(/\s+/).filter(Boolean);
-  const v = $('#vendor').value, st = $('#status').value, k = $('#sort').value;
-  const out = S.catalog.sequences.filter(r => (!v || r.vendor === v)
+  const v = $('#vendor').value, st = $('#status').value, k = $('#sort').value, gs = S.genreSel;
+  const out = S.catalog.sequences.filter(r => (!v || r.vendor === v) && (!gs.size || gs.has(r.genre || ''))
     && (!st || (st === 'problem' ? (r.media_status === 'missing' || r.media_status === 'guess') : st === 'claude' ? r.ai.length : r.media_status === st))
     && terms.every(t => r._q.includes(t)));
   const dir = k === 'modified' || k === 'duration' ? -sortDir : sortDir;
+  const gi = g => { if (!g) return 1e6; const i = cfg.genres.indexOf(g); return i < 0 ? 1e5 : i; };
   return out.sort((a, b) => {
-    const x = a[k], y = b[k];
+    const x = k === 'genre' ? gi(a.genre) : a[k], y = k === 'genre' ? gi(b.genre) : b[k];
     const c = typeof x === 'number' ? x - y : String(x || '\uffff').localeCompare(String(y || '\uffff'), undefined, { sensitivity: 'base' });
     return c * dir || a.title.localeCompare(b.title);
   });
@@ -1498,18 +1662,18 @@ function render() {
   if (!list.length) { main.innerHTML = `<p class="empty">No sequences match. Clear the search or change the filters.</p>`; return; }
   if (view === 'grid') {
     main.innerHTML = `<div class="grid">${list.map(r => `
-      <button class="card" data-id="${r.id}">
+      <button class="card${S.picked.has(r.id) ? ' sel' : ''}" data-id="${r.id}" ${S.selecting ? `aria-pressed="${S.picked.has(r.id)}"` : ''}>
         <div class="art">${artHTML(r)}${r.media_status !== 'ok' ? `<span class="flag ${r.media_status}">${STATUS[r.media_status]}</span>` : ''}</div>
-        <div><div class="ttl">${esc(r.title)}</div><div class="sub">${esc(r.artist || 'Unknown artist')}</div></div>
+        <div><div class="ttl">${esc(r.title)}</div><div class="sub">${esc(r.artist || 'Unknown artist')}</div>${r.genre ? `<div class="gen"><span class="gdot" style="background:${gcol(r.genre)}"></span>${esc(r.genre)}</div>` : ''}</div>
         <div class="meta"><span>${esc(r.vendor)}</span><span class="dur">${mmss(r.duration)}</span></div>
       </button>`).join('')}</div>`;
   } else {
     const k = $('#sort').value;
     const th = (key, label) => `<th data-k="${key}" ${k === key ? `aria-sort="${sortDir > 0 ? 'ascending' : 'descending'}"` : ''}>${label}</th>`;
-    main.innerHTML = `<div class="tablewrap"><table><thead><tr>${th('title', 'Song')}${th('artist', 'Artist')}${th('vendor', 'Vendor')}${th('duration', 'Length')}<th>Song file</th>${th('modified', 'Changed')}</tr></thead><tbody>${
-      list.map(r => `<tr class="row" data-id="${r.id}" tabindex="0">
+    main.innerHTML = `<div class="tablewrap"><table><thead><tr>${th('title', 'Song')}${th('artist', 'Artist')}${th('genre', 'Genre')}${th('vendor', 'Vendor')}${th('duration', 'Length')}<th>Song file</th>${th('modified', 'Changed')}</tr></thead><tbody>${
+      list.map(r => `<tr class="row${S.picked.has(r.id) ? ' sel' : ''}" data-id="${r.id}" tabindex="0">
         <td class="t"><span class="thumb">${artHTML(r)}</span><span>${esc(r.title)}</span></td>
-        <td>${esc(r.artist)}</td><td>${esc(r.vendor)}</td><td class="dur">${mmss(r.duration)}</td>
+        <td>${esc(r.artist)}</td><td>${r.genre ? `<span class="gdot" style="background:${gcol(r.genre)}"></span>${esc(r.genre)}` : ''}</td><td>${esc(r.vendor)}</td><td class="dur">${mmss(r.duration)}</td>
         <td><span class="dot ${r.media_status}"></span>${STATUS[r.media_status]}</td>
         <td>${esc((r.modified || '').slice(0, 10))}</td></tr>`).join('')}</tbody></table></div>`;
     main.querySelectorAll('th[data-k]').forEach(h => h.onclick = () => {
@@ -1630,6 +1794,8 @@ function renderDetail() {
       <div>
         <h2 id="dTitle">${esc(r.title)}</h2>
         <p class="by">${esc(r.artist || 'Unknown artist')}${r.album ? `, from ${esc(r.album)}` : ''}</p>
+        <div class="genrow"><label for="dGenre">Genre</label><select id="dGenre">${genreOptions(r.genre)}</select>
+          <span class="fine">${{ tag: 'from the song file', claude: 'chosen by Claude', you: '' }[r.genre_source] || ''}</span></div>
         ${r.ai.length ? `<p class="aiby">Set by Claude: ${esc(r.ai.join(', '))}.</p>` : ''}
         <div class="song"><b><span class="dot ${r.media_status}"></span>${STATUS[r.media_status]}</b>
           ${esc(r.media_path || r.media_raw || '')}${r.media_note ? `<div class="sub">${esc(r.media_note)}</div>` : ''}</div>
@@ -1651,6 +1817,7 @@ function renderDetail() {
         </div>
       </div>
     </div>`;
+  $('#dGenre').onchange = async e => { const g = await pickGenreValue(e.target, r.genre); if (g !== null) { await setGenre([r.id], g); renderDetail(); toast(g ? `Genre set to ${g}` : 'Genre removed'); } };
   if ($('#cands')) {
     renderCands(r, '');
     let t; $('#candQ').addEventListener('input', e => { clearTimeout(t); t = setTimeout(() => renderCands(r, e.target.value.trim()), 150); });
@@ -1782,6 +1949,7 @@ function fillSettings() {
   $('#sZips').checked = cfg.look_in_zips; $('#sBackups').checked = cfg.include_backups;
   $('#sSkip').value = cfg.skip_folders.join(', ');
   $('#sClient').value = cfg.gdrive_client_id; $('#sFolderName').value = cfg.gdrive_folder_name;
+  $('#sGenres').value = cfg.genres.join('\n');
   const f = [];
   if (S.show) f.push(`<li><span>Show folder: ${esc(S.show.name)}</span></li>`);
   S.music.forEach((m, i) => f.push(`<li><span>Music folder: ${esc(m.name)}</span><button class="btn" type="button" data-rm="${i}">Remove</button></li>`));
@@ -1801,6 +1969,7 @@ async function readSettingsForm() {
     look_in_zips: $('#sZips').checked, include_backups: $('#sBackups').checked,
     skip_folders: $('#sSkip').value.split(',').map(x => x.trim()).filter(Boolean),
     gdrive_client_id: $('#sClient').value.trim(), gdrive_folder_name: $('#sFolderName').value.trim() || 'xLights Catalogue',
+    genres: [...new Set(lines($('#sGenres').value))],
   });
   saveCfg();
   if (JSON.stringify([cfg.skip_folders, cfg.look_in_zips, cfg.include_backups]) !== before && S.show) return scan();
@@ -1842,7 +2011,11 @@ $('#download').onclick = () => {
   const s = S.catalog.stats; if (s.missing || s.guess) download('songs_to_check.csv', csvText(S.catalog), 'text/csv');
 };
 $('#upload').onclick = uploadToDrive;
-$('#main').addEventListener('click', e => { const el = e.target.closest('[data-id]'); if (el) openDetail(el.dataset.id); });
+$('#main').addEventListener('click', e => {
+  const el = e.target.closest('[data-id]'); if (!el) return;
+  if (S.selecting) { togglePick(el.dataset.id); el.classList.toggle('sel', S.picked.has(el.dataset.id)); if (el.matches('.card')) el.setAttribute('aria-pressed', S.picked.has(el.dataset.id)); return; }
+  openDetail(el.dataset.id);
+});
 $('#main').addEventListener('keydown', e => { if (e.key === 'Enter') { const el = e.target.closest('tr[data-id]'); if (el) openDetail(el.dataset.id); } });
 document.querySelectorAll('dialog').forEach(d => d.addEventListener('click', e => {
   if (e.target === d || e.target.closest('[data-close]')) { if (d.id === 'settings' && e.target !== d) return; d.close(); }
