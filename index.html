@@ -156,7 +156,7 @@ footer.wrap{color:var(--mist);font-size:.85rem;padding-bottom:40px}
 @media (max-width:640px){.bar{position:static}.count{margin-left:0}}
 @media (prefers-reduced-motion:reduce){.string.lit circle,.string.busy circle{animation:none;opacity:.9}.toast,.progress .fill{transition:none}}
 /* v3 additions */
-.summary button.link{background:none;border:0;padding:0;color:var(--ice);text-decoration:underline;cursor:pointer;font:inherit}
+button.link{background:none;border:0;padding:0;color:var(--ice);text-decoration:underline;cursor:pointer;font:inherit}
 .log{max-height:280px;overflow:auto;margin:0;padding:12px 14px;list-style:none;background:var(--night);border-radius:var(--r-sm);font-size:.92rem;display:grid;gap:4px}
 .log li{color:var(--mist)} .log li.me{color:var(--frost)} .log li.err{color:var(--holly)} .log li.ok{color:var(--pine)}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:14px} @media (max-width:640px){.row2{grid-template-columns:1fr}}
@@ -245,9 +245,11 @@ dialog{max-height:94vh;overflow:auto}
       <button id="vList" aria-pressed="false">List</button>
     </div>
     <button class="btn" id="selectMode" aria-pressed="false">Select</button>
+    <button class="btn" id="fppExport">Export FPP playlist</button>
     <span class="count" id="count" aria-live="polite"></span>
   </div>
   <div class="wrap chiprow" id="genreChips" role="group" aria-label="Filter by genre"></div>
+  <div class="wrap chiprow" id="groupChips" role="group" aria-label="Filter by model group" hidden></div>
 </div>
 <div class="bulk" id="bulk" hidden>
   <div class="wrap">
@@ -321,6 +323,26 @@ dialog{max-height:94vh;overflow:auto}
   </div>
 </dialog>
 
+<dialog id="modelsDlg" aria-labelledby="modelsTitle">
+  <div class="pane">
+    <button class="close" aria-label="Close" data-close>×</button>
+    <h2 id="modelsTitle">Models</h2>
+    <p class="fine" style="margin:0">Every model and group used by a sequence, and how many sequences use it. Click one to find them.</p>
+    <div class="report" id="modelsBody"></div>
+  </div>
+</dialog>
+
+<dialog id="fppDlg" aria-labelledby="fppTitle">
+  <div class="pane">
+    <button class="close" aria-label="Close" data-close>×</button>
+    <h2 id="fppTitle">Export FPP playlist</h2>
+    <p class="fine" style="margin:0">Falcon Player (FPP) plays rendered .fseq files, not .xsq sequences. This assumes each sequence's .fseq is named the same as its sequence file, which is xLights' default when you render and upload to a controller. Upload the .fseq and song files to FPP first, then import this file as a playlist there.</p>
+    <label class="field"><span>Playlist name</span><input type="text" id="fppName" spellcheck="false"></label>
+    <p class="fine" id="fppSummary" style="margin:0"></p>
+    <div class="actions"><button class="btn primary" id="fppGo">Download playlist</button></div>
+  </div>
+</dialog>
+
 <dialog id="settings" aria-labelledby="sTitle">
   <form method="dialog" class="pane" id="sForm">
     <button class="close" aria-label="Close" value="cancel">×</button>
@@ -363,7 +385,7 @@ dialog{max-height:94vh;overflow:auto}
 'use strict';
 // Snapshot of this page before anything is rendered: used to write the standalone catalogue.
 const PRISTINE = '<!doctype html>\n' + document.documentElement.outerHTML;
-const VERSION = '3.0.0';
+const VERSION = '3.1.0';
 const LIBS = {
   tags: 'https://cdn.jsdelivr.net/npm/jsmediatags@3.9.7/dist/jsmediatags.min.js',
   gis: 'https://accounts.google.com/gsi/client',
@@ -541,7 +563,7 @@ function zipListCached(file, key) { if (!zipLists.has(key)) zipLists.set(key, zi
 
 // ------------------------------------------------------------------ walking the folders
 // A source is {kind:'handle', handle, name} (Chrome/Edge, remembered) or {kind:'files', files, name} (all browsers)
-const S = { show: null, music: [], seqs: null, index: null, catalog: null, report: null, tree: null, proposals: [], genreSel: new Set(), selecting: false, picked: new Set() };
+const S = { show: null, music: [], seqs: null, index: null, catalog: null, report: null, tree: null, proposals: [], genreSel: new Set(), groupSel: new Set(), modelUniverse: null, selecting: false, picked: new Set() };
 
 function skipReason(name) {
   if (!cfg.include_backups && BACKUP_DIRS.includes(name.toLowerCase())) return 'xLights backup folder';
@@ -690,14 +712,36 @@ function parseHead(text) {
     head[t[1].split(':').pop().toLowerCase()] = fixText((t[2] || '').replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')).trim();
   return head;
 }
+// The models and model groups this sequence's timeline uses, from its <DisplayElements> block
+// (the same section xLights' own sequencer reads; it sits well before the bulk effect data).
+function parseElements(text) {
+  const m = text.match(/<DisplayElements\b[^>]*>([\s\S]*?)<\/DisplayElements>/i);
+  if (!m) return null;
+  const models = [], groups = [];
+  for (const el of m[1].matchAll(/<Element\b([^>]*?)\/?>/g)) {
+    const type = (el[1].match(/\btype="([^"]*)"/i) || [])[1];
+    const name = fixText((el[1].match(/\bname="([^"]*)"/i) || [])[1] || '').trim();
+    if (!name) continue;
+    if (type === 'model') models.push(name); else if (type === 'modelGroup') groups.push(name);
+  }
+  return { models, groups };
+}
+// The full model/group list from xlights_rgbeffects.xml, read once per scan so the models mapping can
+// show props no sequence uses yet. The file is never treated as a sequence.
+function parseModelUniverse(text) {
+  const models = [], groups = [];
+  for (const m of text.matchAll(/<model\s[^>]*?\bname="([^"]*)"/gi)) models.push(fixText(m[1]).trim());
+  for (const m of text.matchAll(/<modelGroup\s[^>]*?\bname="([^"]*)"/gi)) groups.push(fixText(m[1]).trim());
+  return { models: [...new Set(models)].filter(Boolean), groups: [...new Set(groups)].filter(Boolean) };
+}
 async function readHeadFromBlob(blob) {
   for (let size = 65536; ; size *= 4) {
     const text = await blob.slice(0, size).text();
-    const head = parseHead(text);
-    if (head) return head;
+    const head = parseHead(text), elements = head && parseElements(text);
+    if (head && elements) return { head, ...elements };
     if (size >= blob.size || size >= 8 << 20) {
       if (!/<xsequence/i.test(text)) throw new Error('not an xLights sequence');
-      return {};
+      return { head: head || {}, models: elements?.models || [], groups: elements?.groups || [] };
     }
   }
 }
@@ -709,20 +753,22 @@ async function readSequence(entry) {
   const key = `${entry.path}|${file.size}|${file.lastModified}`;
   const base = { entry, key, size: file.size, modified: file.lastModified };
   const cached = await idb.get('seq', entry.path);
-  if (cached && cached.key === key) return Object.assign(base, cached.data, { head: tidyHead(cached.data.head) });
+  if (cached && cached.key === key && 'models' in cached.data) return Object.assign(base, cached.data, { head: tidyHead(cached.data.head) });
   let data;
   try {
     if (ext(entry.name) === '.xsqz') {
       const list = await zipListCached(file, key);
       const xsq = list.find(e => !e.dir && e.name.toLowerCase().endsWith('.xsq'));
       if (!xsq) throw new Error('package contains no .xsq file');
-      data = { head: await readHeadFromBlob(await zipRead(file, xsq)), error: '',
+      const { head, models, groups } = await readHeadFromBlob(await zipRead(file, xsq));
+      data = { head, models, groups, error: '',
                packaged: list.filter(e => !e.dir && MEDIA_EXTS.includes(ext(e.name))).map(e => e.name) };
     } else {
-      data = { head: await readHeadFromBlob(file), packaged: [], error: '' };
+      const { head, models, groups } = await readHeadFromBlob(file);
+      data = { head, models, groups, packaged: [], error: '' };
     }
   } catch (e) {
-    data = { head: {}, packaged: [], error: 'Could not read sequence: ' + (e.message || e) };
+    data = { head: {}, models: [], groups: [], packaged: [], error: 'Could not read sequence: ' + (e.message || e) };
   }
   await idb.set('seq', entry.path, { key, data });
   return Object.assign(base, data);
@@ -933,6 +979,10 @@ async function scan() {
     progress(0.01, `Looking through every folder in ${S.show.name}…`);
     const showFiles = await listSource(S.show, '', report);
     report.roots.push(S.show.name);
+    S.modelUniverse = null;
+    const rgbEntry = showFiles.find(e => e.name.toLowerCase() === 'xlights_rgbeffects.xml');
+    if (rgbEntry) { try { S.modelUniverse = parseModelUniverse(await (await rgbEntry.getFile()).text()); } catch {} }
+    S.fseqPaths = new Set(showFiles.filter(e => ext(e.name) === '.fseq').map(e => e.path.toLowerCase()));
     const musicFiles = [];
     for (const m of S.music) {
       if (m.kind === 'handle' && (await m.handle.queryPermission({mode: 'read'})) !== 'granted') {
@@ -1031,6 +1081,7 @@ async function assemble(withProgress) {
       abs_path: `${S.show.name}/${rel}`, folder: dirOf(rel), packaged: ext(seq.entry.name) === '.xsqz',
       in_zip: seq.entry.inZip || '', legacy: !!seq.entry.legacy,
       size: seq.size, modified: new Date(seq.modified - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 19),
+      models: seq.models || [], groups: seq.groups || [],
       ...(() => {
         if (ov.genre) { if (ov.genre_by === 'claude') ai.push('genre'); return { genre: ov.genre, genre_source: ov.genre_by || 'you' }; }
         const byArtist = artist && cfg.artist_genres[artist.toLowerCase()];
@@ -1068,6 +1119,7 @@ async function assemble(withProgress) {
       folders: rep.folders || 0, files: rep.files || 0,
       ok: count('ok'), guess: count('guess'), missing: count('missing'), exempt: count('exempt') },
     report: S.report ? { ...S.report } : null,
+    model_universe: S.modelUniverse || S.catalog?.model_universe || { models: [], groups: [] },
     sequences: records, art,
   };
   await idb.set('kv', 'catalog', catalog);
@@ -1082,6 +1134,22 @@ function csvText(c) {
   for (const r of c.sequences) if (r.media_status === 'missing' || r.media_status === 'guess')
     rows.push([r.media_status, r.rel_path, r.title, r.artist, r.vendor, baseAny(r.media_raw), r.media_path, r.media_note, r.music_url, r.seq_url || '']);
   return rows.map(r => r.map(q).join(',')).join('\r\n');
+}
+// Falcon Player plays rendered .fseq files, not .xsq sequences, so the playlist assumes xLights' default:
+// the .fseq is named the same as the sequence, in the same folder. fseqReady() checks that assumption
+// against .fseq files actually seen in the show folder during this session's scan, when known.
+const fseqNameFor = r => stemOf(r.file_name) + '.fseq';
+function fseqReady(r) {
+  if (!S.fseqPaths) return null;
+  return S.fseqPaths.has(joinPath(dirOf(r.rel_path), fseqNameFor(r)).toLowerCase());
+}
+function buildFppPlaylist(records, name) {
+  const mainPlaylist = records.map(r => {
+    const song = r.media_status !== 'exempt' ? baseAny(r.media_path || '') : '';
+    return song ? { type: 'both', enabled: 1, sequenceName: fseqNameFor(r), mediaName: song }
+                : { type: 'sequence', enabled: 1, sequenceName: fseqNameFor(r) };
+  });
+  return { name: name || 'Sequence catalogue playlist', desc: `Generated by the sequence catalogue on ${new Date().toLocaleString()}`, repeat: 0, mainPlaylist };
 }
 function standaloneHtml(c) {
   const tag = '<script id="catalog-data" type="application/json">';
@@ -1649,14 +1717,16 @@ function drawString() {
 
 function show(c) {
   S.catalog = c;
-  c.sequences.forEach(r => { r.ai ||= []; r.genre ||= ''; for (const k of ['title', 'artist', 'album', 'vendor', 'author']) r[k] = tidy(r[k] || ''); r.comment = fixText(r.comment || ''); indexText(r); });
+  c.sequences.forEach(r => { r.ai ||= []; r.genre ||= ''; r.models ||= []; r.groups ||= []; for (const k of ['title', 'artist', 'album', 'vendor', 'author']) r[k] = tidy(r[k] || ''); r.comment = fixText(r.comment || ''); indexText(r); });
   $('#landing').hidden = true; $('#bar').hidden = false; $('#headActions').hidden = false;
   $('#rescan').textContent = S.show ? `Rescan ${S.show.name}` : 'Choose show folder';
   const s = c.stats;
   const walked = s.folders ? ` Searched ${fmtN(s.folders)} folders and ${fmtN(s.files)} files. <button class="link" id="openReport">See scan report</button>` : '';
+  const models = s.sequences ? ` <button class="link" id="openModels">See your models</button>` : '';
   $('#summary').innerHTML = `<strong>${fmtN(s.sequences)}</strong> sequences from <strong>${s.vendors}</strong> vendor${s.vendors === 1 ? '' : 's'}, `
-    + `<strong>${hm(s.total_duration)}</strong> of show time. Scanned ${esc(new Date(c.generated).toLocaleString())}.${walked}`;
+    + `<strong>${hm(s.total_duration)}</strong> of show time. Scanned ${esc(new Date(c.generated).toLocaleString())}.${walked}${models}`;
   $('#openReport')?.addEventListener('click', openReport);
+  $('#openModels')?.addEventListener('click', openModelsReport);
   const bad = s.missing, check = s.guess;
   const fix = S.seqs ? `<button class="btn primary" data-ai>Fix with Claude</button>` : '';
   let html;
@@ -1671,7 +1741,7 @@ function show(c) {
   vSel.innerHTML = '<option value="">All vendors</option>' + [...new Set(c.sequences.map(r => r.vendor))].sort((a, b) => a.localeCompare(b))
     .map(v => `<option value="${esc(v)}">${esc(v)} (${c.sequences.filter(r => r.vendor === v).length})</option>`).join('');
   vSel.value = cur;
-  renderChips();
+  renderChips(); renderGroupChips();
   $('#foot').textContent = `Show folder: ${c.root}. Catalogue v${c.version}.`;
   updateReviewButton();
   setView(view);
@@ -1693,7 +1763,7 @@ function openReport() {
 }
 
 // ------------------------------------------------------------------ genres
-function indexText(r) { r._q = [r.title, r.artist, r.album, r.vendor, r.genre, r.author, r.file_name, r.rel_path, r.comment].join(' ').toLowerCase(); }
+function indexText(r) { r._q = [r.title, r.artist, r.album, r.vendor, r.genre, r.author, r.file_name, r.rel_path, r.comment, ...(r.models || []), ...(r.groups || [])].join(' ').toLowerCase(); }
 function genreOptions(cur) {
   const list = [...cfg.genres]; if (cur && !list.includes(cur)) list.push(cur);
   return `<option value="">No genre</option>${list.map(g => `<option value="${esc(g)}" ${g === cur ? 'selected' : ''}>${esc(g)}</option>`).join('')}<option value="__new">New genre…</option>`;
@@ -1739,6 +1809,59 @@ $('#genreChips').addEventListener('click', e => {
   if (g === '__all') S.genreSel.clear(); else if (S.genreSel.has(g)) S.genreSel.delete(g); else S.genreSel.add(g);
   renderChips(); render();
 });
+
+// ------------------------------------------------------------------ models & groups mapping
+function renderGroupChips() {
+  const box = $('#groupChips'); if (!S.catalog) return;
+  const counts = new Map();
+  for (const r of S.catalog.sequences) for (const g of r.groups || []) counts.set(g, (counts.get(g) || 0) + 1);
+  for (const g of [...S.groupSel]) if (!counts.has(g)) S.groupSel.delete(g);
+  const order = [...counts.keys()].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  const chip = g => `<button class="chip" data-g="${esc(g)}" aria-pressed="${S.groupSel.has(g)}">${esc(g)} <span class="n">${counts.get(g)}</span></button>`;
+  box.innerHTML = order.length ? `<button class="chip" data-g="__all" aria-pressed="${!S.groupSel.size}">All groups</button>${order.map(chip).join('')}` : '';
+  box.hidden = !order.length;
+}
+$('#groupChips').addEventListener('click', e => {
+  const b = e.target.closest('.chip'); if (!b) return;
+  const g = b.dataset.g;
+  if (g === '__all') S.groupSel.clear(); else if (S.groupSel.has(g)) S.groupSel.delete(g); else S.groupSel.add(g);
+  renderGroupChips(); render();
+});
+// Usage of every model and group: how many sequences use it, their total length, and (from xlights_rgbeffects.xml
+// if it was found during the scan) ones no sequence uses at all.
+function elementStats() {
+  const stats = new Map();
+  const bump = (name, type, r) => {
+    const k = type[0] + ':' + name;
+    if (!stats.has(k)) stats.set(k, { key: k, name, type, count: 0, duration: 0 });
+    const s = stats.get(k); s.count++; s.duration += r.duration || 0;
+  };
+  for (const r of S.catalog?.sequences || []) { for (const m of r.models || []) bump(m, 'model', r); for (const g of r.groups || []) bump(g, 'group', r); }
+  const uni = S.catalog?.model_universe || {};
+  for (const m of uni.models || []) if (!stats.has('m:' + m)) stats.set('m:' + m, { key: 'm:' + m, name: m, type: 'model', count: 0, duration: 0 });
+  for (const g of uni.groups || []) if (!stats.has('g:' + g)) stats.set('g:' + g, { key: 'g:' + g, name: g, type: 'group', count: 0, duration: 0 });
+  return [...stats.values()];
+}
+function openModelsReport() {
+  if (!S.catalog) return;
+  const all = elementStats();
+  const used = all.filter(s => s.count > 0).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  const unused = all.filter(s => s.count === 0).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  const uni = S.catalog.model_universe || {}, hasUniverse = (uni.models?.length || 0) + (uni.groups?.length || 0) > 0;
+  const row = s => `<li><button class="link" data-jump="${esc(s.name)}">${esc(s.name)}</button> <span class="fine">${s.type === 'group' ? 'group' : 'model'} · ${fmtN(s.count)} sequence${s.count === 1 ? '' : 's'} · ${hm(s.duration)}</span></li>`;
+  $('#modelsBody').innerHTML = `
+    ${used.length ? `<div><h3>Used by at least one sequence (${used.length})</h3><ul>${used.map(row).join('')}</ul></div>`
+      : '<p class="fine" style="margin:0">No models or groups were found in your sequences.</p>'}
+    ${unused.length ? `<div><h3>Not used by any sequence yet (${unused.length})</h3><ul>${unused.map(s => `<li>${esc(s.name)} <span class="fine">${s.type}</span></li>`).join('')}</ul></div>`
+      : hasUniverse ? '<p class="fine" style="margin:0">Every model and group is used by at least one sequence.</p>'
+      : '<p class="fine" style="margin:0">Add your show\'s xlights_rgbeffects.xml next time you scan to also see props no sequence uses yet.</p>'}`;
+  $('#modelsDlg').showModal();
+}
+$('#modelsBody').addEventListener('click', e => {
+  const b = e.target.closest('[data-jump]'); if (!b) return;
+  $('#modelsDlg').close(); $('#q').value = b.dataset.jump; render(); $('#q').focus();
+});
+
 // select mode: pick several sequences, then set their genre in one go
 function updateBulk() {
   $('#bulk').hidden = !S.selecting;
@@ -1765,8 +1888,9 @@ $('#bulkGenre').onchange = async e => {
 
 function filtered() {
   const terms = $('#q').value.toLowerCase().trim().split(/\s+/).filter(Boolean);
-  const v = $('#vendor').value, st = $('#status').value, k = $('#sort').value, gs = S.genreSel;
+  const v = $('#vendor').value, st = $('#status').value, k = $('#sort').value, gs = S.genreSel, ps = S.groupSel;
   const out = S.catalog.sequences.filter(r => (!v || r.vendor === v) && (!gs.size || gs.has(r.genre || ''))
+    && (!ps.size || (r.groups || []).some(g => ps.has(g)))
     && (!st || (st === 'problem' ? (r.media_status === 'missing' || r.media_status === 'guess') : st === 'claude' ? r.ai.length : r.media_status === st))
     && terms.every(t => r._q.includes(t)));
   const dir = k === 'modified' || k === 'duration' ? -sortDir : sortDir;
@@ -1777,6 +1901,29 @@ function filtered() {
     return c * dir || a.title.localeCompare(b.title);
   });
 }
+
+function openFppExport() {
+  if (!S.catalog) return;
+  const base = filtered();
+  const records = S.selecting && S.picked.size ? base.filter(r => S.picked.has(r.id)) : base;
+  if (!records.length) return toast('No sequences to export. Adjust your filters or pick some with Select first.', 5000);
+  S.fppRecords = records;
+  $('#fppName').value = S.show?.name || 'My show';
+  const noSong = records.filter(r => r.media_status !== 'exempt' && !r.media_path).length;
+  const notReady = S.fseqPaths ? records.filter(r => !fseqReady(r)).length : 0;
+  $('#fppSummary').textContent = `${fmtN(records.length)} sequence${records.length === 1 ? '' : 's'} will be included.`
+    + (noSong ? ` ${fmtN(noSong)} still need a song.` : '')
+    + (notReady ? ` ${fmtN(notReady)} don't have a rendered .fseq in your show folder yet.` : '');
+  $('#fppDlg').showModal();
+}
+$('#fppExport').onclick = openFppExport;
+$('#fppGo').onclick = () => {
+  const name = $('#fppName').value.trim() || 'playlist';
+  const playlist = buildFppPlaylist(S.fppRecords, name);
+  download(`${name.replace(/[\\/:*?"<>|]/g, '_')}.json`, JSON.stringify(playlist, null, 2), 'application/json');
+  $('#fppDlg').close();
+  toast(`Downloaded ${name}.json. Import it as a playlist in FPP.`, 6000);
+};
 
 function render() {
   if (!S.catalog) return;
@@ -1939,6 +2086,7 @@ function renderDetail() {
   stopPlayer();
   const r = recById(curId); if (!r) return $('#detail').close();
   const fact = (k, v) => v ? `<dt>${k}</dt><dd>${v}</dd>` : '';
+  const listFact = names => !names.length ? '' : names.length <= 8 ? esc(names.join(', ')) : `${esc(names.slice(0, 8).join(', '))} <span class="fine">+${names.length - 8} more</span>`;
   const site = r.author_website ? `<a href="${esc(/^https?:/.test(r.author_website) ? r.author_website : 'https://' + r.author_website)}" target="_blank" rel="noopener">${esc(r.author_website)}</a>` : '';
   const ov = cfg.overrides[r.rel_path] || {}, marked = r.media_status === 'exempt' && r.media_note.startsWith('Marked');
   const pos = navIds.indexOf(r.id), lenCmp = r.song_duration && r.duration && Math.abs(r.song_duration - r.duration) > 3 ? ` (song is ${mmss(r.song_duration)})` : '';
@@ -1960,6 +2108,7 @@ function renderDetail() {
           ${fact('Vendor', esc(r.vendor))}${fact('Author', r.author && r.author !== r.vendor ? esc(r.author) : '')}
           ${seqPageFact(r)}${fact('Website', site)}${fact('Email', esc(r.author_email))}
           ${fact('Length', mmss(r.duration) + lenCmp)}${fact('Timing', esc(r.timing))}${fact('Type', esc(r.seq_type))}
+          ${fact('Models', listFact(r.models || []))}${fact('Groups', listFact(r.groups || []))}
           ${fact('xLights', esc(r.xlights_version))}${fact('File', esc(r.rel_path))}
           ${fact('Format', r.legacy ? 'Older xLights sequence (.xml)' : '')}${fact('Zip', r.in_zip ? esc(r.in_zip) + ' (not unzipped)' : '')}
           ${fact('Changed', esc((r.modified || '').replace('T', ' ')))}${fact('Size', (r.size / 1048576).toFixed(1) + ' MB')}
