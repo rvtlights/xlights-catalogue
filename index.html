@@ -375,7 +375,7 @@ const ZIP_MAX = 4 * 1024 ** 3;
 const DEFAULTS = {
   no_audio_expected: [], animation_needs_no_song: true, vendors: [], vendor_from_folder: false,
   skip_folders: ['__MACOSX', '.*', '$RECYCLE.BIN', 'System Volume Information'], include_backups: false, look_in_zips: true,
-  fetch_online_art: false, overrides: {},
+  fetch_online_art: false, overrides: {}, artist_genres: {},
   gdrive_client_id: '', gdrive_folder_name: 'xLights Catalogue', gdrive_folder_id: '',
   ai_model: 'claude-sonnet-5-5', ai_batch: 10, ai_tasks: { song: true, vendor: true, details: true, art: true, genre: true, link: true }, ai_web: true, ai_auto: false,
   genres: ['Classic Christmas', "Rock 'n' Roll & Oldies", 'Christmas Pop', 'Country', 'Rock & Metal', 'R&B & Soul', 'Jazz & Swing',
@@ -420,6 +420,7 @@ const idb = (() => {
 let cfg = Object.assign({}, DEFAULTS, store.get('settings', {}));
 cfg.ai_tasks = Object.assign({}, DEFAULTS.ai_tasks, cfg.ai_tasks);
 cfg.overrides ||= {};
+cfg.artist_genres ||= {};
 const saveCfg = () => store.set('settings', cfg);
 
 // ------------------------------------------------------------------ helpers
@@ -1013,6 +1014,7 @@ async function assemble(withProgress) {
     let [vendor, vsrc] = resolveVendor(head, rel);
     if (ov.vendor) { vendor = ov.vendor; vsrc = 'claude'; ai.push('vendor'); }
     const [fa, ft] = splitArtistTitle(stemOf(seq.entry.name));
+    const artist = tidy(ov.artist || head.artist || am.artist || fa);
     if (ov.title || ov.artist || ov.album) ai.push('details');
     let art = am.art, artSrc = am.art ? 'embedded' : '';
     if (ov.art_url) { art = ov.art_url; artSrc = 'claude'; ai.push('album art'); }
@@ -1020,7 +1022,7 @@ async function assemble(withProgress) {
     return {
       id: hash(rel).slice(0, 12),
       title: tidy(ov.title || head.song || am.title || ft || cleanTitle(stemOf(seq.entry.name))),
-      artist: tidy(ov.artist || head.artist || am.artist || fa), album: tidy(ov.album || head.album || am.album),
+      artist, album: tidy(ov.album || head.album || am.album),
       vendor, vendor_source: vsrc, author: head.author || '', author_email: head['author-email'] || '',
       author_website: head['author-website'] || '', duration: Math.round((seqDur || audioDur || 0) * 100) / 100,
       song_duration: Math.round(audioDur * 100) / 100,
@@ -1031,6 +1033,8 @@ async function assemble(withProgress) {
       size: seq.size, modified: new Date(seq.modified - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 19),
       ...(() => {
         if (ov.genre) { if (ov.genre_by === 'claude') ai.push('genre'); return { genre: ov.genre, genre_source: ov.genre_by || 'you' }; }
+        const byArtist = artist && cfg.artist_genres[artist.toLowerCase()];
+        if (byArtist && cfg.genres.some(g => g.toLowerCase() === byArtist.toLowerCase())) return { genre: byArtist, genre_source: 'artist' };
         const g = mapGenre(am.genre); return { genre: g, genre_source: g ? 'tag' : '' };
       })(),
       song_genre_tag: am.genre || '',
@@ -1092,7 +1096,7 @@ const apiKey = () => sessionStorage.getItem('xlc-key') || store.get('apikey', ''
 const AI_SYSTEM = `You help organise a Christmas / holiday light show built with xLights. You are working on a catalogue of xLights sequences (.xsq files, .xsqz packages, some inside vendor .zip downloads). The app has already walked every folder and matched what it could with simple rules. You handle the cases those rules could not settle.
 
 Each sequence you receive lists the tasks to do for it:
-- "song": find the audio file this sequence was made for. Search with find_audio using the expected file name, the song title, and the artist. Candidates can be anywhere, including inside zip files (paths containing "!/"). Confirm with read_audio_tags: matching title/artist tags and a song length within about 3 seconds of the sequence length is strong evidence (sequences are usually exactly as long as their song, sometimes a few seconds longer). Different versions of the same song (radio edit, live, remix) have different lengths, so length is the best tie-breaker. Use list_folder to look around the sequence's own folder. If the sequence is clearly an intro, countdown, announcement, loop or animation that would not have a song, use propose_no_song. If you cannot find a convincing match, do not guess: leave it and mention it in finish.
+- "song": find the audio file this sequence was made for. Search with find_audio using the expected file name, the song title, and the artist. Candidates can be anywhere, including inside zip files (paths containing "!/"). Confirm with read_audio_tags: matching title/artist tags and a song length within about 3 seconds of the sequence length is strong evidence (sequences are usually exactly as long as their song, sometimes a few seconds longer). Different versions of the same song (radio edit, live, remix) have different lengths, so length is the best tie-breaker. Use list_folder to look around the sequence's own folder. If the sequence is clearly an intro, countdown, announcement, loop or animation that would not have a song, use propose_no_song. If several sequences you're looking at share a folder or file-name pattern and are clearly all intros/countdowns/loops with no song by design, use propose_no_song_rule instead so every sequence matching that pattern (including ones added later) is covered at once. If you cannot find a convincing match, do not guess: leave it and mention it in finish.
 - "vendor": work out the business that sold the sequence. The author, email domain, website and folder names are clues. Use web search (if available) to confirm the vendor's proper business name. Prefer propose_vendor_rule with patterns like "*domain.com*" or "Vendors/Name/*" so that every sequence from that vendor is covered, and reuse an existing vendor name exactly when it is the same company. Use propose_vendor only for one-off cases.
 - "details": fill in a missing artist (and fix an obviously wrong title) from audio tags, the file name, or a web search. Only propose values you are confident about.
 - "art": find album art with search_album_art and propose an image whose artist and title match. Prefer the original studio release. Skip if nothing matches well.
@@ -1101,6 +1105,7 @@ Each sequence you receive lists the tasks to do for it:
 
 Rules:
 - Only use file paths returned by your tools, and only image URLs returned by search_album_art. Never invent them.
+- A sequence may list "previously_rejected": suggestions you made in an earlier run that the user turned down. Don't propose the same thing again for that sequence unless you have new, different evidence than before.
 - Confidence is 0 to 1: 0.9+ means you verified it (e.g. tags and length match), 0.6 to 0.9 means likely, below 0.6 do not propose.
 - Keep reasons short and specific, e.g. "Title and artist tags match; song 3:05 vs sequence 3:05".
 - Be efficient: batch your thinking, avoid repeating searches, and call finish once every sequence in the batch has been handled.`;
@@ -1113,6 +1118,7 @@ const AI_TOOLS = [
   { name: 'search_album_art', description: 'Search Apple Music for a song. Returns up to 5 releases with artist, title, album, year and image_url.', input_schema: { type: 'object', properties: { artist: { type: 'string' }, title: { type: 'string' } }, required: ['title'] } },
   { name: 'propose_song', description: 'Suggest the audio file for a sequence.', input_schema: { type: 'object', properties: { sequence_id: { type: 'string' }, audio_path: { type: 'string' }, confidence: { type: 'number' }, reason: { type: 'string' } }, required: ['sequence_id', 'audio_path', 'confidence', 'reason'] } },
   { name: 'propose_no_song', description: 'Suggest that a sequence intentionally has no song (intro, countdown, loop, animation).', input_schema: { type: 'object', properties: { sequence_id: { type: 'string' }, confidence: { type: 'number' }, reason: { type: 'string' } }, required: ['sequence_id', 'confidence', 'reason'] } },
+  { name: 'propose_no_song_rule', description: 'Suggest a pattern for sequences that never need a song, so future sequences matching it (not just the ones in this batch) are covered automatically. Patterns are checked against the sequence\'s path and file name, and must be specific (e.g. "Intros/*", "*Countdown*").', input_schema: { type: 'object', properties: { patterns: { type: 'array', items: { type: 'string' } }, confidence: { type: 'number' }, reason: { type: 'string' } }, required: ['patterns', 'confidence', 'reason'] } },
   { name: 'propose_details', description: 'Suggest a corrected title, artist and/or album for a sequence.', input_schema: { type: 'object', properties: { sequence_id: { type: 'string' }, title: { type: 'string' }, artist: { type: 'string' }, album: { type: 'string' }, confidence: { type: 'number' }, reason: { type: 'string' } }, required: ['sequence_id', 'confidence', 'reason'] } },
   { name: 'propose_vendor', description: 'Suggest the vendor for specific sequences.', input_schema: { type: 'object', properties: { sequence_ids: { type: 'array', items: { type: 'string' } }, vendor: { type: 'string' }, confidence: { type: 'number' }, reason: { type: 'string' } }, required: ['sequence_ids', 'vendor', 'confidence', 'reason'] } },
   { name: 'propose_vendor_rule', description: 'Suggest a vendor rule: glob patterns checked against author, email, website and path of every sequence. Patterns must be specific (e.g. "*acmepixel.com*", "Vendors/Acme/*").', input_schema: { type: 'object', properties: { vendor: { type: 'string' }, patterns: { type: 'array', items: { type: 'string' } }, confidence: { type: 'number' }, reason: { type: 'string' } }, required: ['vendor', 'patterns', 'confidence', 'reason'] } },
@@ -1152,7 +1158,16 @@ function searchAudio(queries, limit) {
 }
 function recById(id) { return S.catalog?.sequences.find(r => r.id === id); }
 const mmssS = s => s ? `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}` : 'unknown';
+// Suggestions the user has already turned down for this sequence, so Claude doesn't repeat them without new evidence.
+const REJECTED_LABEL = {
+  song: p => `song: ${baseAny(p.data.path)}`, no_song: () => "doesn't need a song", details: p => `details: ${Object.entries(p.data).map(([k, v]) => `${k} "${v}"`).join(', ')}`,
+  vendor: p => `vendor: ${p.data.vendor}`, vendor_rule: p => `vendor: ${p.data.vendor}`, art: () => 'that album art', link: p => `sequence page: ${p.data.url}`, genre: p => `genre: ${p.data.genre}`,
+};
+function rejectedNotes(r) {
+  return S.proposals.filter(p => p.status === 'rejected' && p.seq_ids.includes(r.id)).slice(-5).map(p => (REJECTED_LABEL[p.type] || (() => p.type))(p));
+}
 function seqInfo(r) {
+  const rejected = rejectedNotes(r);
   return { id: r.id, file: r.rel_path, in_zip: r.in_zip || undefined, title: r.title, artist: r.artist || null, album: r.album || null,
     vendor: r.vendor, vendor_from: r.vendor_source, author: r.author || null, author_email: r.author_email || null, author_website: r.author_website || null,
     song_link: r.music_url || null, notes: r.comment || null, sequence_type: r.seq_type || null,
@@ -1160,10 +1175,14 @@ function seqInfo(r) {
     expected_song_file: r.media_raw || null, song_status: r.media_status, current_song: r.media_path || null,
     current_song_length: r.song_duration ? `${mmssS(r.song_duration)} (${r.song_duration}s)` : null, note: r.media_note || null, has_album_art: !!r.art,
     genre: r.genre || null, genre_tag_in_song_file: r.song_genre_tag || null,
-    vendor_domain: vendorHost(r) || null, sequence_page: r.seq_url || null };
+    vendor_domain: vendorHost(r) || null, sequence_page: r.seq_url || null,
+    previously_rejected: rejected.length ? rejected : undefined };
 }
 function vendorRuleMatches(patterns) {
   return S.catalog.sequences.filter(r => [r.author, r.author_email, r.author_website, r.rel_path].some(f => f && globMatch(f, patterns)));
+}
+function noSongRuleMatches(patterns) {
+  return S.catalog.sequences.filter(r => globMatch(r.rel_path, patterns) || globMatch(r.file_name, patterns));
 }
 function tasksFor(r) {
   const t = [], ov = cfg.overrides[r.rel_path] || {}, want = cfg.ai_tasks;
@@ -1254,6 +1273,18 @@ async function runTool(name, input, batchIds) {
       const r = needSeq(input.sequence_id);
       addProposal({ type: 'no_song', seq_ids: [r.id], data: {}, confidence: conf(input.confidence), reason: input.reason });
       aiLog(`Suggested ${r.title} doesn't need a song`, 'me'); return { ok: true };
+    }
+    case 'propose_no_song_rule': {
+      const pats = (input.patterns || []).map(p => String(p).trim()).filter(Boolean);
+      const weak = pats.find(p => p.replace(/[*?]/g, '').length < 4);
+      if (!pats.length) throw new Error('need patterns');
+      if (weak) throw new Error(`pattern "${weak}" is too broad`);
+      const hits = noSongRuleMatches(pats);
+      if (!hits.length) throw new Error('these patterns match no sequences');
+      const c = conf(input.confidence);
+      addProposal({ type: 'no_song_rule', seq_ids: hits.map(r => r.id), data: { patterns: pats }, confidence: c, reason: input.reason });
+      aiLog(`Suggested ${hits.length} sequence${hits.length > 1 ? 's' : ''} never need a song (${pats.join(', ')})`, 'me');
+      return { ok: true, matches: hits.length };
     }
     case 'propose_details': {
       const r = needSeq(input.sequence_id), data = {};
@@ -1430,6 +1461,7 @@ function applyProposal(p) {
   const ov = rel => (cfg.overrides[rel] ||= {});
   if (p.type === 'song') rels.forEach(rel => { Object.assign(ov(rel), { media: p.data.path, media_reason: p.reason }); delete ov(rel).no_song; });
   if (p.type === 'no_song') rels.forEach(rel => { Object.assign(ov(rel), { no_song: true, no_song_reason: p.reason }); delete ov(rel).media; });
+  if (p.type === 'no_song_rule') cfg.no_audio_expected = [...new Set([...cfg.no_audio_expected, ...p.data.patterns])];
   if (p.type === 'details') rels.forEach(rel => Object.assign(ov(rel), p.data));
   if (p.type === 'vendor') rels.forEach(rel => { ov(rel).vendor = p.data.vendor; });
   if (p.type === 'art') rels.forEach(rel => { ov(rel).art_url = p.data.url; });
@@ -1440,7 +1472,10 @@ function applyProposal(p) {
   if (p.type === 'genre') {
     rels.forEach(rel => Object.assign(ov(rel), { genre: p.data.genre, genre_by: 'claude' }));
     if (!cfg.genres.some(g => g.toLowerCase() === p.data.genre.toLowerCase())) cfg.genres.push(p.data.genre);
-    p.seq_ids.map(recById).filter(Boolean).forEach(r => { r.genre = p.data.genre; r.genre_source = 'claude'; if (!r.ai.includes('genre')) r.ai.push('genre'); indexText(r); });
+    p.seq_ids.map(recById).filter(Boolean).forEach(r => {
+      r.genre = p.data.genre; r.genre_source = 'claude'; if (!r.ai.includes('genre')) r.ai.push('genre'); indexText(r);
+      const artistKey = (r.artist || '').trim().toLowerCase(); if (artistKey) cfg.artist_genres[artistKey] = p.data.genre;
+    });
   }
   if (p.type === 'vendor_rule') {
     const ex = cfg.vendors.find(v => v.name.toLowerCase() === p.data.vendor.toLowerCase());
@@ -1461,7 +1496,7 @@ function updateReviewButton() {
   const n = S.proposals.filter(p => p.status === 'pending').length;
   $('#openReview').hidden = !n; $('#openReview').textContent = `Review suggestions (${n})`;
 }
-const TYPE_LABEL = { song: 'Song', no_song: 'No song needed', details: 'Details', vendor: 'Vendor', vendor_rule: 'Vendor rule', art: 'Album art', genre: 'Genre', link: 'Sequence page' };
+const TYPE_LABEL = { song: 'Song', no_song: 'No song needed', no_song_rule: 'No song needed (rule)', details: 'Details', vendor: 'Vendor', vendor_rule: 'Vendor rule', art: 'Album art', genre: 'Genre', link: 'Sequence page' };
 function renderReview() {
   const pend = S.proposals.filter(p => p.status === 'pending').sort((a, b) => b.confidence - a.confidence);
   $('#rIntro').textContent = pend.length ? `${pend.length} suggestion${pend.length > 1 ? 's' : ''} waiting. Accepted changes are kept across rescans, and you can undo them from any sequence's details.` : 'No suggestions waiting.';
@@ -1471,6 +1506,7 @@ function renderReview() {
     let what = '';
     if (p.type === 'song') what = `${who}: use ${esc(baseAny(p.data.path))}<div class="sub">${esc(p.data.path)}</div>`;
     if (p.type === 'no_song') what = `${who}: doesn't need a song`;
+    if (p.type === 'no_song_rule') what = `${who}: never need a song<div class="sub">Rule: ${esc(p.data.patterns.join(', '))}</div>`;
     if (p.type === 'details') what = `${who}: ${esc(Object.entries(p.data).map(([k, v]) => `${k} "${v}"`).join(', '))}`;
     if (p.type === 'vendor') what = `${who}: vendor ${esc(p.data.vendor)}`;
     if (p.type === 'vendor_rule') what = `${esc(p.data.vendor)} for ${who}<div class="sub">Rule: ${esc(p.data.patterns.join(', '))}</div>`;
@@ -1674,9 +1710,12 @@ async function setGenre(ids, genre) {
   for (const id of ids) {
     const r = recById(id); if (!r) continue;
     const ov = (cfg.overrides[r.rel_path] ||= {});
-    if (genre) Object.assign(ov, { genre, genre_by: 'you' });
+    const artistKey = (r.artist || '').trim().toLowerCase();
+    if (genre) { Object.assign(ov, { genre, genre_by: 'you' }); if (artistKey) cfg.artist_genres[artistKey] = genre; }
     else { delete ov.genre; delete ov.genre_by; if (!Object.keys(ov).length) delete cfg.overrides[r.rel_path]; }
-    r.genre = genre || mapGenre(r.song_genre_tag); r.genre_source = genre ? 'you' : (r.genre ? 'tag' : '');
+    const byArtist = artistKey && cfg.artist_genres[artistKey];
+    const resolved = genre || byArtist || mapGenre(r.song_genre_tag);
+    r.genre = resolved; r.genre_source = genre ? 'you' : byArtist ? 'artist' : (resolved ? 'tag' : '');
     r.ai = r.ai.filter(x => x !== 'genre'); indexText(r);
   }
   saveCfg(); await idb.set('kv', 'catalog', S.catalog);
@@ -1912,7 +1951,7 @@ function renderDetail() {
         <h2 id="dTitle">${esc(r.title)}</h2>
         <p class="by">${esc(r.artist || 'Unknown artist')}${r.album ? `, from ${esc(r.album)}` : ''}</p>
         <div class="genrow"><label for="dGenre">Genre</label><select id="dGenre">${genreOptions(r.genre)}</select>
-          <span class="fine">${{ tag: 'from the song file', claude: 'chosen by Claude', you: '' }[r.genre_source] || ''}</span></div>
+          <span class="fine">${{ tag: 'from the song file', claude: 'chosen by Claude', artist: 'same as other sequences by this artist', you: '' }[r.genre_source] || ''}</span></div>
         ${r.ai.length ? `<p class="aiby">Set by Claude: ${esc(r.ai.join(', '))}.</p>` : ''}
         <div class="song"><b><span class="dot ${r.media_status}"></span>${STATUS[r.media_status]}</b>
           ${esc(r.media_path || r.media_raw || '')}${r.media_note ? `<div class="sub">${esc(r.media_note)}</div>` : ''}</div>
