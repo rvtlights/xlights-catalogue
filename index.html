@@ -185,6 +185,9 @@ dialog{max-height:94vh;overflow:auto}
 .picked{padding:12px 14px;background:var(--night);border-radius:var(--r-sm);display:grid;gap:6px}
 .len-ok{color:var(--pine)} .len-off{color:var(--amber)}
 .links{display:flex;flex-wrap:wrap;gap:8px}
+.mrow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--wire)}
+.mrow:last-child{border-bottom:0}
+.mrow select{background:var(--night);border:1px solid var(--wire);border-radius:var(--r-sm);padding:6px 8px;flex:none;max-width:45%}
 .btn.sm{padding:6px 10px;font-size:.9rem}
 </style>
 </head>
@@ -397,9 +400,9 @@ const ZIP_MAX = 4 * 1024 ** 3;
 const DEFAULTS = {
   no_audio_expected: [], animation_needs_no_song: true, vendors: [], vendor_from_folder: false,
   skip_folders: ['__MACOSX', '.*', '$RECYCLE.BIN', 'System Volume Information'], include_backups: false, look_in_zips: true,
-  fetch_online_art: false, overrides: {}, artist_genres: {},
+  fetch_online_art: false, overrides: {}, artist_genres: {}, model_map: {},
   gdrive_client_id: '', gdrive_folder_name: 'xLights Catalogue', gdrive_folder_id: '',
-  ai_model: 'claude-sonnet-5-5', ai_batch: 10, ai_tasks: { song: true, vendor: true, details: true, art: true, genre: true, link: true }, ai_web: true, ai_auto: false,
+  ai_model: 'claude-sonnet-5-5', ai_batch: 10, ai_tasks: { song: true, vendor: true, details: true, art: true, genre: true, link: true, models: true }, ai_web: true, ai_auto: false,
   genres: ['Classic Christmas', "Rock 'n' Roll & Oldies", 'Christmas Pop', 'Country', 'Rock & Metal', 'R&B & Soul', 'Jazz & Swing',
            'Orchestral & Instrumental', 'Religious & Choral', 'A Cappella', 'Kids & Movies', 'Electronic & Dance', 'Hip-Hop',
            'Latin', 'Novelty & Comedy', 'Halloween', 'Other Holidays', 'Show Elements'],
@@ -443,6 +446,7 @@ let cfg = Object.assign({}, DEFAULTS, store.get('settings', {}));
 cfg.ai_tasks = Object.assign({}, DEFAULTS.ai_tasks, cfg.ai_tasks);
 cfg.overrides ||= {};
 cfg.artist_genres ||= {};
+cfg.model_map ||= {};
 const saveCfg = () => store.set('settings', cfg);
 
 // ------------------------------------------------------------------ helpers
@@ -563,7 +567,7 @@ function zipListCached(file, key) { if (!zipLists.has(key)) zipLists.set(key, zi
 
 // ------------------------------------------------------------------ walking the folders
 // A source is {kind:'handle', handle, name} (Chrome/Edge, remembered) or {kind:'files', files, name} (all browsers)
-const S = { show: null, music: [], seqs: null, index: null, catalog: null, report: null, tree: null, proposals: [], genreSel: new Set(), groupSel: new Set(), modelUniverse: null, selecting: false, picked: new Set() };
+const S = { show: null, music: [], seqs: null, index: null, catalog: null, report: null, tree: null, proposals: [], genreSel: new Set(), groupSel: new Set(), modelUniverse: null, xmodelIndex: null, modelMatchCache: null, selecting: false, picked: new Set() };
 
 function skipReason(name) {
   if (!cfg.include_backups && BACKUP_DIRS.includes(name.toLowerCase())) return 'xLights backup folder';
@@ -571,7 +575,7 @@ function skipReason(name) {
   return '';
 }
 function newReport() {
-  return { folders: 0, files: 0, seq: 0, xsqz: 0, legacy: 0, media: 0, zips: 0, zipOpened: 0, zipSeq: 0, zipMedia: 0,
+  return { folders: 0, files: 0, seq: 0, xsqz: 0, legacy: 0, media: 0, zips: 0, zipOpened: 0, zipSeq: 0, zipMedia: 0, xmodels: 0,
            skipped: [], errors: [], duplicates: [], roots: [] };
 }
 
@@ -627,7 +631,7 @@ async function expandZips(entries, report, wantSeq) {
       for (const e of list) {
         if (e.dir || e.name.split('/').includes('__MACOSX')) continue;
         const x = ext(e.name), isSeq = wantSeq && SEQ_EXTS.includes(x), isMedia = MEDIA_EXTS.includes(x);
-        if (!isSeq && !isMedia && !(wantSeq && x === '.xml')) continue;
+        if (!isSeq && !isMedia && !(wantSeq && (x === '.xml' || x === '.xmodel'))) continue;
         const name = baseAny(e.name);
         out.push({ path: `${z.path}!/${e.name}`, name, inZip: z.path,
           getFile: async () => new File([await zipRead(await z.getFile(), e)], name, { lastModified: e.date || f.lastModified }) });
@@ -726,13 +730,45 @@ function parseElements(text) {
   }
   return { models, groups };
 }
+// Shape/size attributes from a <model>/<custommodel>/... tag's own attribute text, used to tell whether
+// two models are physically the same prop regardless of what either show calls it.
+function shapeAttrs(attrText) {
+  const get = n => { const mm = attrText.match(new RegExp('\\b' + n + '="([^"]*)"', 'i')); return mm ? mm[1] : ''; };
+  return { displayAs: get('DisplayAs') || '', stringType: get('StringType') || '',
+    parm1: +get('parm1') || +get('CustomWidth') || 0, parm2: +get('parm2') || +get('CustomHeight') || 0,
+    parm3: +get('parm3') || 0, pixelSize: +get('PixelSize') || 0 };
+}
 // The full model/group list from xlights_rgbeffects.xml, read once per scan so the models mapping can
-// show props no sequence uses yet. The file is never treated as a sequence.
+// show props no sequence uses yet, and so vendor models can be compared against your own models' shape
+// (parseXModel below gets the same attributes for a vendor's bundled .xmodel, when one exists).
+// The file is never treated as a sequence.
 function parseModelUniverse(text) {
-  const models = [], groups = [];
-  for (const m of text.matchAll(/<model\s[^>]*?\bname="([^"]*)"/gi)) models.push(fixText(m[1]).trim());
-  for (const m of text.matchAll(/<modelGroup\s[^>]*?\bname="([^"]*)"/gi)) groups.push(fixText(m[1]).trim());
-  return { models: [...new Set(models)].filter(Boolean), groups: [...new Set(groups)].filter(Boolean) };
+  const models = [], groups = [], attrs = {}, groupMembers = {};
+  for (const m of text.matchAll(/<model\s([^>]*)>/gi)) {
+    const name = fixText((m[1].match(/\bname="([^"]*)"/i) || [])[1] || '').trim();
+    if (!name) continue;
+    models.push(name); attrs[name.toLowerCase()] = shapeAttrs(m[1]);
+  }
+  for (const m of text.matchAll(/<modelGroup\s([^>]*)>/gi)) {
+    const name = fixText((m[1].match(/\bname="([^"]*)"/i) || [])[1] || '').trim();
+    if (!name) continue;
+    groups.push(name);
+    const mem = (m[1].match(/\bmodels="([^"]*)"/i) || [])[1] || '';
+    if (mem) groupMembers[name.toLowerCase()] = mem.split(',').map(s => fixText(s).trim()).filter(Boolean);
+  }
+  return { models: [...new Set(models)].filter(Boolean), groups: [...new Set(groups)].filter(Boolean), attrs, groupMembers };
+}
+// A vendor-bundled .xmodel file for one prop. xLights has used different root tags across versions
+// (model, custommodel, dmxmodel, ...), wrapped or not in <models type="exported">, so this looks for
+// the first tag with a name="" attribute rather than any particular tag name.
+function parseXModel(text) {
+  const m = text.match(/<([\w:-]+)\s+([^>]*\bname="[^"]*"[^>]*)>/i);
+  if (!m) return null;
+  const name = fixText((m[2].match(/\bname="([^"]*)"/i) || [])[1] || '').trim();
+  if (!name) return null;
+  const attrs = shapeAttrs(m[2]);
+  if (!attrs.displayAs && m[1].toLowerCase() === 'custommodel') attrs.displayAs = 'Custom';
+  return { name, ...attrs };
 }
 async function readHeadFromBlob(blob) {
   for (let size = 65536; ; size *= 4) {
@@ -997,6 +1033,14 @@ async function scan() {
     const all = [...showFiles, ...musicFiles, ...zipped];
     S.tree = buildTree(all);
 
+    // .xmodel files some vendors bundle with a sequence, for comparing shape/size against your own models
+    S.xmodelIndex = new Map();
+    const xmodelFiles = [...showFiles, ...zipped].filter(e => ext(e.name) === '.xmodel');
+    report.xmodels = xmodelFiles.length;
+    await pool(xmodelFiles, 4, async e => {
+      try { const m = parseXModel(await (await e.getFile()).text()); if (m) S.xmodelIndex.set(m.name.toLowerCase(), m); } catch {}
+    });
+
     // songs: every media file anywhere
     const media = all.filter(e => MEDIA_EXTS.includes(ext(e.name)));
     report.media = media.filter(e => !e.inZip).length; report.zipMedia = media.filter(e => e.inZip).length;
@@ -1038,6 +1082,7 @@ async function scan() {
 
 // Turn parsed sequences into catalogue records. Re-run cheaply when settings or suggestions change.
 async function assemble(withProgress) {
+  S.modelMatchCache = null;
   const seqs = S.seqs, total = seqs.length; let done = 0;
   const records = await pool(seqs, 6, async seq => {
     const head = seq.head, rel = seq.entry.path, ov = cfg.overrides[rel] || {};
@@ -1120,6 +1165,7 @@ async function assemble(withProgress) {
       ok: count('ok'), guess: count('guess'), missing: count('missing'), exempt: count('exempt') },
     report: S.report ? { ...S.report } : null,
     model_universe: S.modelUniverse || S.catalog?.model_universe || { models: [], groups: [] },
+    xmodel_hints: S.xmodelIndex ? Object.fromEntries(S.xmodelIndex) : (S.catalog?.xmodel_hints || {}),
     sequences: records, art,
   };
   await idb.set('kv', 'catalog', catalog);
@@ -1170,6 +1216,7 @@ Each sequence you receive lists the tasks to do for it:
 - "art": find album art with search_album_art and propose an image whose artist and title match. Prefer the original studio release. Skip if nothing matches well.
 - "link": find this sequence's own product page on the vendor's website, using web search (for example: site:vendor-domain "song title", or the vendor name plus "xlights" and the title). The right page sells this sequence for this song; not the vendor's home page, a category or search page, or another vendor's page. Vendors sometimes sell several versions of one song: prefer the page whose name matches the sequence's file name or artist. Propose the page with propose_sequence_link using the exact URL from a search result. If you can't find it confidently, leave it. If the vendor isn't a business that sells sequences (for example a person's own name, "Me", or the show owner), skip it without searching.
 - "genre": choose one genre from the list given in the batch, using propose_genres (one call can cover many sequences). Judge by the specific recording, not the song: "Jingle Bell Rock" by Bobby Helms is Rock 'n' Roll & Oldies but by Hall & Oates is Christmas Pop. Guide: crooners and vintage standards (Bing Crosby, Nat King Cole, Frank Sinatra, Andy Williams, Perry Como) are Classic Christmas; 1950s-60s rock 'n' roll and girl groups (Brenda Lee, Bobby Helms, the Ronettes) are Rock 'n' Roll & Oldies; modern pop (Mariah Carey, Wham!, Ariana Grande, Michael Bublé's pop covers) is Christmas Pop; Trans-Siberian Orchestra is Rock & Metal; Mannheim Steamroller and film scores are Orchestral & Instrumental; Pentatonix is A Cappella; songs from films and children's shows (Frozen, The Grinch, Rudolph) are Kids & Movies; intros, countdowns, announcements and loops without music are Show Elements. If the artist is unknown, use the song title, file and folder names, audio tags or a web search. Only suggest a genre outside the list when none fits at all.
+- "models": this sequence was made for a different physical layout. Its models/groups that don't already match something of yours by name are listed in needs_model_map (each with its type and any local best guess already found by comparing shape and pixel counts, which you should trust over a name-only hunch). Your own layout's models and groups are listed below. Judge by what the prop actually is, not just the name: a vendor's "Arch 1" and your "Arch A" are likely the same arch even though the names differ; don't match a vendor's "Mega Tree" to your "Spiral Tree" just because both are trees if nothing else lines up. The same vendor model name usually recurs across many of that vendor's sequences, so once you're confident about a mapping, use propose_model_map for every sequence in this batch that needs it rather than deciding it fresh each time. If nothing in your layout plays the same role, don't force a match: leave it and mention it in finish.
 
 Rules:
 - Only use file paths returned by your tools, and only image URLs returned by search_album_art. Never invent them.
@@ -1192,6 +1239,7 @@ const AI_TOOLS = [
   { name: 'propose_vendor_rule', description: 'Suggest a vendor rule: glob patterns checked against author, email, website and path of every sequence. Patterns must be specific (e.g. "*acmepixel.com*", "Vendors/Acme/*").', input_schema: { type: 'object', properties: { vendor: { type: 'string' }, patterns: { type: 'array', items: { type: 'string' } }, confidence: { type: 'number' }, reason: { type: 'string' } }, required: ['vendor', 'patterns', 'confidence', 'reason'] } },
   { name: 'propose_sequence_link', description: "Suggest the web page where this sequence is sold on the vendor's site. The url must be one that appeared in your web search results.", input_schema: { type: 'object', properties: { sequence_id: { type: 'string' }, url: { type: 'string' }, confidence: { type: 'number' }, reason: { type: 'string' } }, required: ['sequence_id', 'url', 'confidence', 'reason'] } },
   { name: 'propose_genres', description: 'Suggest a genre for one or more sequences. Use genres from the list in the batch.', input_schema: { type: 'object', properties: { items: { type: 'array', items: { type: 'object', properties: { sequence_id: { type: 'string' }, genre: { type: 'string' }, confidence: { type: 'number' }, reason: { type: 'string' } }, required: ['sequence_id', 'genre', 'confidence', 'reason'] } } }, required: ['items'] } },
+  { name: 'propose_model_map', description: "Map one of a sequence's model/group names (from its needs_model_map) to a model/group in your own layout. my_name must be one of \"Your layout's models/groups\" from this batch's message.", input_schema: { type: 'object', properties: { sequence_id: { type: 'string' }, vendor_name: { type: 'string' }, my_name: { type: 'string' }, confidence: { type: 'number' }, reason: { type: 'string' } }, required: ['sequence_id', 'vendor_name', 'my_name', 'confidence', 'reason'] } },
   { name: 'propose_album_art', description: 'Suggest album art for a sequence, using an image_url from search_album_art.', input_schema: { type: 'object', properties: { sequence_id: { type: 'string' }, image_url: { type: 'string' }, confidence: { type: 'number' }, reason: { type: 'string' } }, required: ['sequence_id', 'image_url', 'confidence', 'reason'] } },
   { name: 'finish', description: 'Call once every sequence in this batch has been handled.', input_schema: { type: 'object', properties: { summary: { type: 'string' }, unresolved: { type: 'array', items: { type: 'object', properties: { sequence_id: { type: 'string' }, why: { type: 'string' } } } } }, required: ['summary'] } },
 ];
@@ -1230,12 +1278,38 @@ const mmssS = s => s ? `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padSt
 const REJECTED_LABEL = {
   song: p => `song: ${baseAny(p.data.path)}`, no_song: () => "doesn't need a song", details: p => `details: ${Object.entries(p.data).map(([k, v]) => `${k} "${v}"`).join(', ')}`,
   vendor: p => `vendor: ${p.data.vendor}`, vendor_rule: p => `vendor: ${p.data.vendor}`, art: () => 'that album art', link: p => `sequence page: ${p.data.url}`, genre: p => `genre: ${p.data.genre}`,
+  model_map: p => `model map: "${p.data.vendor_name}" to your "${p.data.my_name}"`,
 };
 function rejectedNotes(r) {
   return S.proposals.filter(p => p.status === 'rejected' && p.seq_ids.includes(r.id)).slice(-5).map(p => (REJECTED_LABEL[p.type] || (() => p.type))(p));
 }
+// Model/group names this sequence uses that aren't a confident match in your layout yet, with the best
+// local guess (if any) so Claude has a starting point instead of reasoning from nothing.
+// The closest candidate for a name regardless of confidence, for Claude's benefit only: getModelMatches()
+// (which drives the compare panel's pre-selected dropdown and whether the "models" task is needed at all)
+// stays strict and returns nothing below its threshold, so this is a separate, looser pass.
+function bestGuess(vendorName, vendorAttrs, pool) {
+  if (!pool.length) return null;
+  if (vendorAttrs?.displayAs) {
+    const sameShape = pool.find(c => c.attrs?.displayAs && c.attrs.displayAs.toLowerCase() === vendorAttrs.displayAs.toLowerCase());
+    if (sameShape) return { name: sameShape.name, reason: `Same shape (${vendorAttrs.displayAs}), but pixel counts differ` };
+  }
+  let best = null;
+  const nq = normName(vendorName + '.x');
+  for (const c of pool) { const s = similarity(nq, normName(c.name + '.x')); if (!best || s > best.s) best = { name: c.name, s }; }
+  return best ? { name: best.name, reason: `Closest name match (not confident enough to use automatically)` } : null;
+}
+function unmappedModels(r) {
+  const mm = getModelMatches(), uni = S.catalog?.model_universe || {}, hints = S.catalog?.xmodel_hints || {};
+  const myModelPool = (uni.models || []).map(n => ({ name: n, attrs: uni.attrs?.[n.toLowerCase()] }));
+  const myGroupPool = (uni.groups || []).map(n => ({ name: n, attrs: null }));
+  const out = [];
+  for (const n of r.models || []) { if (!mm.get('m:' + n)) out.push({ name: n, type: 'model', best_guess: bestGuess(n, hints[n.toLowerCase()], myModelPool) }); }
+  for (const n of r.groups || []) { if (!mm.get('g:' + n)) out.push({ name: n, type: 'group', best_guess: bestGuess(n, null, myGroupPool) }); }
+  return out;
+}
 function seqInfo(r) {
-  const rejected = rejectedNotes(r);
+  const rejected = rejectedNotes(r), needsMap = unmappedModels(r);
   return { id: r.id, file: r.rel_path, in_zip: r.in_zip || undefined, title: r.title, artist: r.artist || null, album: r.album || null,
     vendor: r.vendor, vendor_from: r.vendor_source, author: r.author || null, author_email: r.author_email || null, author_website: r.author_website || null,
     song_link: r.music_url || null, notes: r.comment || null, sequence_type: r.seq_type || null,
@@ -1244,6 +1318,7 @@ function seqInfo(r) {
     current_song_length: r.song_duration ? `${mmssS(r.song_duration)} (${r.song_duration}s)` : null, note: r.media_note || null, has_album_art: !!r.art,
     genre: r.genre || null, genre_tag_in_song_file: r.song_genre_tag || null,
     vendor_domain: vendorHost(r) || null, sequence_page: r.seq_url || null,
+    needs_model_map: needsMap.length ? needsMap : undefined,
     previously_rejected: rejected.length ? rejected : undefined };
 }
 function vendorRuleMatches(patterns) {
@@ -1261,11 +1336,13 @@ function tasksFor(r) {
   if (want.art && !r.art && !ov.art_url) t.push('art');
   if (want.genre && !r.genre) t.push('genre');
   if (want.link && !r.seq_url && !ov.seq_url && r.vendor !== 'Unknown vendor' && cfg.ai_web && !AI.noWeb) t.push('link');
+  if (want.models) { const mm = getModelMatches();
+    if ((r.models || []).some(n => !mm.get('m:' + n)) || (r.groups || []).some(n => !mm.get('g:' + n))) t.push('models'); }
   return t;
 }
 function taskCounts() {
-  const c = { song: 0, vendor: 0, details: 0, art: 0, genre: 0, link: 0 }, saved = cfg.ai_tasks, savedWeb = cfg.ai_web;
-  cfg.ai_tasks = { song: true, vendor: true, details: true, art: true, genre: true, link: true }; cfg.ai_web = true;
+  const c = { song: 0, vendor: 0, details: 0, art: 0, genre: 0, link: 0, models: 0 }, saved = cfg.ai_tasks, savedWeb = cfg.ai_web;
+  cfg.ai_tasks = { song: true, vendor: true, details: true, art: true, genre: true, link: true, models: true }; cfg.ai_web = true;
   for (const r of S.catalog?.sequences || []) for (const t of tasksFor(r)) c[t]++;
   cfg.ai_tasks = saved; cfg.ai_web = savedWeb; return c;
 }
@@ -1408,6 +1485,17 @@ async function runTool(name, input, batchIds) {
       if (ok) aiLog(`Suggested genres for ${ok} sequence${ok > 1 ? 's' : ''}`, 'me');
       return { ok, errors: errs.length ? errs : undefined };
     }
+    case 'propose_model_map': {
+      const r = needSeq(input.sequence_id), vendorName = String(input.vendor_name || '').trim(), myName = String(input.my_name || '').trim();
+      if (!vendorName || !myName) throw new Error('need vendor_name and my_name');
+      const uni = S.catalog.model_universe || {};
+      if (!(uni.models || []).concat(uni.groups || []).some(n => n.toLowerCase() === myName.toLowerCase()))
+        throw new Error(`my_name "${myName}" isn't one of your layout's models or groups`);
+      if (!(r.models || []).concat(r.groups || []).some(n => n.toLowerCase() === vendorName.toLowerCase()))
+        throw new Error(`vendor_name "${vendorName}" isn't a model or group this sequence uses`);
+      addProposal({ type: 'model_map', seq_ids: [r.id], data: { vendor_name: vendorName, my_name: myName }, confidence: conf(input.confidence), reason: input.reason });
+      aiLog(`Suggested mapping "${vendorName}" to your "${myName}"`, 'me'); return { ok: true };
+    }
     case 'finish': return { ok: true };
   }
   return { error: `Unknown tool ${name}` };
@@ -1431,7 +1519,9 @@ async function runBatch(batch, n, of) {
     `Batch ${n} of ${of}. Show folder: "${S.show.name}". Music folders: ${S.music.map(m => `"music:${m.name}"`).join(', ') || 'none'}. `
     + `${fmtN(S.index.count)} song/video files are indexed.\n`
     + `Vendor names already in use: ${JSON.stringify([...new Set(vendorsInUse)].slice(0, 80))}\n`
-    + `Genres to choose from: ${JSON.stringify(cfg.genres)}\n\n`
+    + `Genres to choose from: ${JSON.stringify(cfg.genres)}\n`
+    + `Your layout's models: ${JSON.stringify((S.catalog.model_universe?.models || []).slice(0, 300))}\n`
+    + `Your layout's groups: ${JSON.stringify((S.catalog.model_universe?.groups || []).slice(0, 300))}\n\n`
     + `<sequences>\n${JSON.stringify(payload, null, 1)}\n</sequences>` }];
   const custom = AI_TOOLS.map((t, i) => i === AI_TOOLS.length - 1 ? { ...t, cache_control: { type: 'ephemeral' } } : t);
   const tools = cfg.ai_web && !AI.noWeb ? [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }, ...custom] : custom;
@@ -1545,6 +1635,7 @@ function applyProposal(p) {
       const artistKey = (r.artist || '').trim().toLowerCase(); if (artistKey) cfg.artist_genres[artistKey] = p.data.genre;
     });
   }
+  if (p.type === 'model_map') { cfg.model_map[p.data.vendor_name.toLowerCase()] = { to: p.data.my_name, from: p.data.vendor_name }; invalidateModelMatches(); }
   if (p.type === 'vendor_rule') {
     const ex = cfg.vendors.find(v => v.name.toLowerCase() === p.data.vendor.toLowerCase());
     if (ex) ex.match = [...new Set([...ex.match, ...p.data.patterns])]; else cfg.vendors.push({ name: p.data.vendor, match: p.data.patterns });
@@ -1564,7 +1655,7 @@ function updateReviewButton() {
   const n = S.proposals.filter(p => p.status === 'pending').length;
   $('#openReview').hidden = !n; $('#openReview').textContent = `Review suggestions (${n})`;
 }
-const TYPE_LABEL = { song: 'Song', no_song: 'No song needed', no_song_rule: 'No song needed (rule)', details: 'Details', vendor: 'Vendor', vendor_rule: 'Vendor rule', art: 'Album art', genre: 'Genre', link: 'Sequence page' };
+const TYPE_LABEL = { song: 'Song', no_song: 'No song needed', no_song_rule: 'No song needed (rule)', details: 'Details', vendor: 'Vendor', vendor_rule: 'Vendor rule', art: 'Album art', genre: 'Genre', link: 'Sequence page', model_map: 'Model mapping' };
 function renderReview() {
   const pend = S.proposals.filter(p => p.status === 'pending').sort((a, b) => b.confidence - a.confidence);
   $('#rIntro').textContent = pend.length ? `${pend.length} suggestion${pend.length > 1 ? 's' : ''} waiting. Accepted changes are kept across rescans, and you can undo them from any sequence's details.` : 'No suggestions waiting.';
@@ -1582,6 +1673,7 @@ function renderReview() {
     if (p.type === 'link') { let lbl = p.data.url; try { const u = new URL(p.data.url); lbl = u.hostname.replace(/^www\./, '') + decodeURIComponent(u.pathname); } catch {}
       what = `${who}: <a href="${esc(p.data.url)}" target="_blank" rel="noopener">${esc(lbl)}</a>${p.data.other_site ? ' <span class="fine">(not on the vendor\'s own site)</span>' : ''}`; }
     if (p.type === 'genre') what = `${who}${first?.artist ? ` (${esc(first.artist)})` : ''}: <span class="gdot" style="background:${gcol(p.data.genre)}"></span>${esc(p.data.genre)}${p.data.is_new ? ' <span class="fine">(new genre)</span>' : ''}`;
+    if (p.type === 'model_map') what = `${who}: "${esc(p.data.vendor_name)}" → your "${esc(p.data.my_name)}"`;
     const lvl = p.confidence >= 0.9 ? 'hi' : p.confidence >= 0.75 ? 'mid' : 'lo';
     return `<li class="prop ${lvl}"><div class="what">${TYPE_LABEL[p.type]}: ${what}</div>
       <div class="btns"><button class="btn primary" data-acc="${p.id}">Accept</button><button class="btn" data-rej="${p.id}">Reject</button></div>
@@ -1602,7 +1694,7 @@ $('#openReview').onclick = openReview; $('#aiReview').onclick = openReview;
 function openAI() {
   if (!S.seqs) return toast(S.show ? 'Rescan first so Claude can look through your folders.' : 'Choose your show folder first.', 5000);
   const c = taskCounts();
-  const labels = { song: 'Find missing or uncertain songs', vendor: 'Identify vendors', details: 'Fill in missing artists', art: 'Find album art', genre: 'Assign genres', link: "Find each sequence's page on the vendor's website (uses web search)" };
+  const labels = { song: 'Find missing or uncertain songs', vendor: 'Identify vendors', details: 'Fill in missing artists', art: 'Find album art', genre: 'Assign genres', link: "Find each sequence's page on the vendor's website (uses web search)", models: 'Map models to your layout' };
   $('#aiTasks').innerHTML = Object.keys(labels).map(k => `<label class="check"><input type="checkbox" data-task="${k}" ${cfg.ai_tasks[k] ? 'checked' : ''} ${c[k] ? '' : 'disabled'}><span>${labels[k]} (${c[k]})</span></label>`).join('');
   $('#aiKey').value = apiKey(); $('#aiRemember').checked = !!store.get('apikey', '');
   $('#aiModel').value = cfg.ai_model; $('#aiBatch').value = String(cfg.ai_batch); $('#aiWeb').checked = cfg.ai_web; $('#aiAuto').checked = cfg.ai_auto;
@@ -1755,6 +1847,7 @@ function openReport() {
     <div><h3>Found</h3><ul>${li([
       `${fmtN(r.seq)} sequences (.xsq)`, `${fmtN(r.xsqz)} packaged sequences (.xsqz)`, r.legacy ? `${fmtN(r.legacy)} older-format sequences (.xml)` : '',
       r.zipSeq ? `${fmtN(r.zipSeq)} sequences inside zip files` : '', `${fmtN(r.media)} songs and videos`, r.zipMedia ? `${fmtN(r.zipMedia)} songs and videos inside zip files` : '',
+      r.xmodels ? `${fmtN(r.xmodels)} bundled model file${r.xmodels === 1 ? '' : 's'} (.xmodel), used to compare shape with your own models` : '',
     ].filter(Boolean))}</ul></div>
     ${r.skipped.length ? `<div><h3>Skipped (${r.skipped.length})</h3><ul>${li(r.skipped.slice(0, 200).map(s => `${esc(s.path)}: ${esc(s.why)}`))}</ul><p class="fine">Change what's skipped in Settings.</p></div>` : ''}
     ${r.errors.length ? `<div><h3>Couldn't read (${r.errors.length})</h3><ul>${li(r.errors.slice(0, 200).map(e => `${esc(e.path)}: ${esc(e.msg)}`))}</ul></div>` : ''}
@@ -1842,6 +1935,87 @@ function elementStats() {
   for (const g of uni.groups || []) if (!stats.has('g:' + g)) stats.set('g:' + g, { key: 'g:' + g, name: g, type: 'group', count: 0, duration: 0 });
   return [...stats.values()];
 }
+// Matches a vendor's model/group name to your own layout, when the name itself doesn't already match
+// exactly. Shape (DisplayAs + pixel/node counts, from a bundled .xmodel) is a far more reliable signal
+// than name similarity when it's available, since vendor and your own naming are unrelated; it only
+// ever applies to models, since groups carry no shape attributes of their own.
+function modelMatchFor(vendorName, vendorAttrs, pool) {
+  if (vendorAttrs?.displayAs) {
+    for (const c of pool) {
+      if (!c.attrs || !c.attrs.displayAs || c.attrs.displayAs.toLowerCase() !== vendorAttrs.displayAs.toLowerCase()) continue;
+      const close = (x, y) => Math.abs((x || 0) - (y || 0)) <= 1;
+      if (close(vendorAttrs.parm1, c.attrs.parm1) && close(vendorAttrs.parm2, c.attrs.parm2) && close(vendorAttrs.parm3, c.attrs.parm3)) {
+        return { name: c.name, confidence: 0.95, method: 'shape', reason: `Same shape (${vendorAttrs.displayAs}) and pixel counts as "${c.name}"` };
+      }
+    }
+  }
+  let best = null;
+  const nq = normName(vendorName + '.x');
+  for (const c of pool) { const s = similarity(nq, normName(c.name + '.x')); if (!best || s > best.s) best = { name: c.name, s }; }
+  if (best && best.s >= 0.82) return { name: best.name, confidence: Math.min(0.9, 0.5 + best.s * 0.4), method: 'name', reason: `Name closely matches "${best.name}"` };
+  return null;
+}
+// Best current match (your own choice, an exact name, or a local guess) for every distinct model/group
+// name any sequence uses. Cached until the catalogue is reassembled or a mapping changes.
+function getModelMatches() {
+  if (S.modelMatchCache) return S.modelMatchCache;
+  const out = new Map();
+  if (!S.catalog) return (S.modelMatchCache = out);
+  const uni = S.catalog.model_universe || {}, hints = S.catalog.xmodel_hints || {};
+  const myModelPool = (uni.models || []).map(n => ({ name: n, attrs: uni.attrs?.[n.toLowerCase()] }));
+  const myGroupPool = (uni.groups || []).map(n => ({ name: n, attrs: null }));
+  const myNamesLower = new Set([...(uni.models || []), ...(uni.groups || [])].map(n => n.toLowerCase()));
+  const names = new Map();
+  for (const r of S.catalog.sequences) {
+    for (const m of r.models || []) names.set('m:' + m, { name: m, isModel: true });
+    for (const g of r.groups || []) names.set('g:' + g, { name: g, isModel: false });
+  }
+  for (const [key, { name, isModel }] of names) {
+    const mapped = cfg.model_map[name.toLowerCase()];
+    if (mapped) { out.set(key, { name: mapped.to, confidence: 1, method: 'you', reason: 'You set this mapping' }); continue; }
+    if (myNamesLower.has(name.toLowerCase())) { out.set(key, { name, confidence: 1, method: 'exact', reason: 'Exact name match' }); continue; }
+    const vendorAttrs = isModel ? hints[name.toLowerCase()] : null;
+    out.set(key, modelMatchFor(name, vendorAttrs, isModel ? myModelPool : myGroupPool));
+  }
+  return (S.modelMatchCache = out);
+}
+function invalidateModelMatches() { S.modelMatchCache = null; }
+// Apply a model/group mapping yourself (from the compare panel); Claude's proposals go through the
+// usual review instead. Clears to "use the local guess again" when given no name.
+function setModelMap(vendorName, myName) {
+  const key = vendorName.toLowerCase();
+  if (myName) cfg.model_map[key] = { to: myName, from: vendorName }; else delete cfg.model_map[key];
+  saveCfg(); invalidateModelMatches();
+}
+// xLights reads every *.xmaphint file in <show folder>/maphints/ for its own Import Effects mapping,
+// matching FromModel (a vendor's name) against ToRegex (checked against your own model's name).
+function buildXmapHint() {
+  const escAttr = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[c]));
+  const reEsc = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const lines = Object.values(cfg.model_map).filter(Boolean)
+    .map(({ to, from }) => `  <Map ToRegex="${escAttr('^' + reEsc(to) + '$')}" FromModel="${escAttr(from)}" ApplyTo="B" />`);
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<MapHints>\n${lines.join('\n')}\n</MapHints>\n`;
+}
+const XMAPHINT_NAME = 'catalogue-mapping.xmaphint';
+async function saveMappingToShow() {
+  if (!S.show || S.show.kind !== 'handle') return toast("This browser can't save into your show folder. Chrome or Edge can.", 5000);
+  const n = Object.values(cfg.model_map).filter(Boolean).length;
+  if (!n) return toast('No mappings to save yet.', 4000);
+  try {
+    if ((await S.show.handle.requestPermission({ mode: 'readwrite' })) !== 'granted') throw new Error('Permission to save into the show folder was not given.');
+    const dir = await S.show.handle.getDirectoryHandle('maphints', { create: true });
+    let exists = false; try { await dir.getFileHandle(XMAPHINT_NAME); exists = true; } catch {}
+    if (exists && !confirm(`${XMAPHINT_NAME} already exists in maphints. Replace it with your current mappings?`)) return;
+    const fh = await dir.getFileHandle(XMAPHINT_NAME, { create: true }), w = await fh.createWritable();
+    await w.write(buildXmapHint()); await w.close();
+    toast(`Saved ${n} mapping${n === 1 ? '' : 's'} to maphints/${XMAPHINT_NAME}. xLights uses it automatically next time you import effects.`, 7000);
+  } catch (e) { toast('Could not save the mapping: ' + e.message, 6000); }
+}
+function clearModelMap() {
+  if (!Object.keys(cfg.model_map).length) return;
+  if (!confirm('Remove every model/group mapping you\'ve set or accepted? This only affects the catalogue; it does not touch a file already saved to your show folder.')) return;
+  cfg.model_map = {}; saveCfg(); invalidateModelMatches(); openModelsReport();
+}
 function openModelsReport() {
   if (!S.catalog) return;
   const all = elementStats();
@@ -1849,12 +2023,18 @@ function openModelsReport() {
   const unused = all.filter(s => s.count === 0).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
   const uni = S.catalog.model_universe || {}, hasUniverse = (uni.models?.length || 0) + (uni.groups?.length || 0) > 0;
   const row = s => `<li><button class="link" data-jump="${esc(s.name)}">${esc(s.name)}</button> <span class="fine">${s.type === 'group' ? 'group' : 'model'} · ${fmtN(s.count)} sequence${s.count === 1 ? '' : 's'} · ${hm(s.duration)}</span></li>`;
+  const mapped = Object.values(cfg.model_map).filter(Boolean);
   $('#modelsBody').innerHTML = `
+    ${mapped.length ? `<div><h3>Your mappings to other layouts (${mapped.length})</h3>
+      <ul>${mapped.map(({ to, from }) => `<li>"${esc(from)}" → your "${esc(to)}"</li>`).join('')}</ul>
+      <p class="fine" style="margin:0">Save these so xLights maps every future sequence from the same vendors automatically.</p>
+      <div class="actions"><button class="btn primary sm" id="mmSave">Save mapping to show folder</button><button class="btn sm" id="mmClear">Clear mapping</button></div></div>` : ''}
     ${used.length ? `<div><h3>Used by at least one sequence (${used.length})</h3><ul>${used.map(row).join('')}</ul></div>`
       : '<p class="fine" style="margin:0">No models or groups were found in your sequences.</p>'}
     ${unused.length ? `<div><h3>Not used by any sequence yet (${unused.length})</h3><ul>${unused.map(s => `<li>${esc(s.name)} <span class="fine">${s.type}</span></li>`).join('')}</ul></div>`
       : hasUniverse ? '<p class="fine" style="margin:0">Every model and group is used by at least one sequence.</p>'
       : '<p class="fine" style="margin:0">Add your show\'s xlights_rgbeffects.xml next time you scan to also see props no sequence uses yet.</p>'}`;
+  $('#mmSave')?.addEventListener('click', saveMappingToShow); $('#mmClear')?.addEventListener('click', clearModelMap);
   $('#modelsDlg').showModal();
 }
 $('#modelsBody').addEventListener('click', e => {
@@ -2082,11 +2262,32 @@ function fixSection(r) {
   </div>`;
 }
 
+// Models/groups this sequence uses that don't already match your layout by name, each with the best
+// local guess (shape or name match) pre-selected, and a dropdown to confirm or pick a different one.
+function modelCompareSection(r) {
+  if (!S.catalog) return '';
+  const uni = S.catalog.model_universe || {}, mm = getModelMatches();
+  const rows = [...(r.models || []).map(n => ({ name: n, isModel: true, m: mm.get('m:' + n) })),
+                ...(r.groups || []).map(n => ({ name: n, isModel: false, m: mm.get('g:' + n) }))]
+    .filter(x => !x.m || x.m.method !== 'exact');
+  if (!rows.length) return '';
+  const row = ({ name, isModel, m }) => {
+    const pool = (isModel ? uni.models : uni.groups) || [];
+    const options = `<option value="">Not in my layout</option>` + pool.map(p => `<option value="${esc(p)}" ${m?.name === p ? 'selected' : ''}>${esc(p)}</option>`).join('');
+    return `<div class="mrow"><div><strong>${esc(name)}</strong> <span class="fine">${isModel ? 'model' : 'group'}${m ? ` · ${esc(m.reason)}` : ' · no local match found'}</span></div>
+      <select data-mm="${esc(name)}">${options}</select></div>`;
+  };
+  return `<div class="fix"><h3>Compare with your layout</h3>
+    <p class="fine" style="margin:0">${rows.length} of ${(r.models || []).length + (r.groups || []).length} models/groups this sequence uses don't already match your layout by name. Pick the closest one, or leave "Not in my layout" if you don't have an equivalent. "Fix with Claude" can also suggest these.</p>
+    ${rows.map(row).join('')}
+  </div>`;
+}
 function renderDetail() {
   stopPlayer();
   const r = recById(curId); if (!r) return $('#detail').close();
   const fact = (k, v) => v ? `<dt>${k}</dt><dd>${v}</dd>` : '';
-  const listFact = names => !names.length ? '' : names.length <= 8 ? esc(names.join(', ')) : `${esc(names.slice(0, 8).join(', '))} <span class="fine">+${names.length - 8} more</span>`;
+  const listFact = names => !names.length ? '' : names.length <= 8 ? esc(names.join(', ')) :
+    `<span class="elist"><span class="short">${esc(names.slice(0, 8).join(', '))}</span><span class="full" hidden>${esc(names.join(', '))}</span> <button class="link" data-expand>+${names.length - 8} more</button></span>`;
   const site = r.author_website ? `<a href="${esc(/^https?:/.test(r.author_website) ? r.author_website : 'https://' + r.author_website)}" target="_blank" rel="noopener">${esc(r.author_website)}</a>` : '';
   const ov = cfg.overrides[r.rel_path] || {}, marked = r.media_status === 'exempt' && r.media_note.startsWith('Marked');
   const pos = navIds.indexOf(r.id), lenCmp = r.song_duration && r.duration && Math.abs(r.song_duration - r.duration) > 3 ? ` (song is ${mmss(r.song_duration)})` : '';
@@ -2104,6 +2305,7 @@ function renderDetail() {
         <div class="song"><b><span class="dot ${r.media_status}"></span>${STATUS[r.media_status]}</b>
           ${esc(r.media_path || r.media_raw || '')}${r.media_note ? `<div class="sub">${esc(r.media_note)}</div>` : ''}</div>
         ${r.media_status === 'exempt' ? '' : fixSection(r)}
+        ${modelCompareSection(r)}
         <dl class="facts">
           ${fact('Vendor', esc(r.vendor))}${fact('Author', r.author && r.author !== r.vendor ? esc(r.author) : '')}
           ${seqPageFact(r)}${fact('Website', site)}${fact('Email', esc(r.author_email))}
@@ -2123,6 +2325,7 @@ function renderDetail() {
       </div>
     </div>`;
   $('#dGenre').onchange = async e => { const g = await pickGenreValue(e.target, r.genre); if (g !== null) { await setGenre([r.id], g); renderDetail(); toast(g ? `Genre set to ${g}` : 'Genre removed'); } };
+  document.querySelectorAll('#dBody [data-mm]').forEach(sel => { sel.onchange = () => { setModelMap(sel.dataset.mm, sel.value || null); renderDetail(); }; });
   if ($('#cands')) {
     renderCands(r, '');
     let t; $('#candQ').addEventListener('input', e => { clearTimeout(t); t = setTimeout(() => renderCands(r, e.target.value.trim()), 150); });
@@ -2166,6 +2369,8 @@ async function saveIntoShow(r, file) {
 
 $('#dBody').addEventListener('click', async e => {
   const r = recById(curId); if (!r) return;
+  const exp = e.target.closest('[data-expand]');
+  if (exp) { const wrap = exp.closest('.elist'); wrap.querySelector('.short').hidden = true; wrap.querySelector('.full').hidden = false; exp.remove(); return; }
   const t = e.target.closest('[data-act],[data-use],[data-listen]'); if (!t) return;
   if (t.dataset.listen) {
     if (t.classList.contains('playing')) return stopPlayer();
