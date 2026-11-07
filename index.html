@@ -215,8 +215,10 @@ dialog{max-height:94vh;overflow:auto}
   <div class="actions-row">
     <button class="btn primary big" id="pickShow">Choose show folder</button>
     <button class="btn big" id="resume" hidden></button>
+    <button class="btn big" id="loadDrive">Load from Google Drive</button>
     <button class="btn big" id="openSettings2">Settings</button>
   </div>
+  <p class="fine">Already uploaded a catalogue from another device? <strong>Load from Google Drive</strong> brings down your catalogue and settings, so your song matches, vendor rules and genres are ready to go — you'll still choose your show folder yourself afterwards.</p>
 </section>
 
 <div class="bar" role="search" id="bar" hidden>
@@ -1779,6 +1781,7 @@ async function uploadToDrive() {
       ['xlights_catalogue.html', standaloneHtml(c), 'text/html'],
       ['xlights_catalogue.json', JSON.stringify(withoutArt(c), null, 1), 'application/json'],
       ['songs_to_check.csv', csvText(c), 'text/csv'],
+      ['xlights_settings.json', JSON.stringify(cfg, null, 1), 'application/json'],
     ];
     for (const [name, data, type] of files) {
       const q = encodeURIComponent(`name='${dq(name)}' and '${folder.id}' in parents and trashed=false`);
@@ -1793,6 +1796,44 @@ async function uploadToDrive() {
     if (folder.webViewLink) window.open(folder.webViewLink, '_blank', 'noopener');
   } catch (e) {
     toast('Upload failed: ' + e.message, 9000);
+  } finally { setButtons(true); }
+}
+// Pulls the catalogue and settings back down on a browser/device that has neither yet (a fresh
+// install, or after Reset everything). File System Access handles never travel with them, so you still
+// choose your show folder yourself afterwards; this just means the app already knows your fixes and
+// rules once you do. Needs the same Google Drive client ID as the device that uploaded (Settings) --
+// and the same folder name too, if you changed it from the default.
+async function loadFromDrive() {
+  setButtons(false);
+  try {
+    const token = await getDriveToken();
+    const API = 'https://www.googleapis.com/drive/v3/files';
+    const folderName = cfg.gdrive_folder_name || 'xLights Catalogue';
+    toast(`Looking for "${folderName}" in Google Drive…`, 15000);
+    let folder = null;
+    if (cfg.gdrive_folder_id) { try { folder = await drive(token, `${API}/${cfg.gdrive_folder_id}?fields=id,trashed`); if (folder.trashed) folder = null; } catch { folder = null; } }
+    if (!folder) {
+      const q = encodeURIComponent(`name='${dq(folderName)}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
+      folder = (await drive(token, `${API}?q=${q}&fields=files(id)&pageSize=1`)).files?.[0];
+    }
+    if (!folder) throw new Error(`No "${folderName}" folder found in Google Drive. If you used a different folder name on the device that uploaded, set it in Settings first.`);
+    const findFile = async name => {
+      const q = encodeURIComponent(`name='${dq(name)}' and '${folder.id}' in parents and trashed=false`);
+      return (await drive(token, `${API}?q=${q}&fields=files(id)&pageSize=1`)).files?.[0];
+    };
+    const [settingsFile, catalogFile] = await Promise.all([findFile('xlights_settings.json'), findFile('xlights_catalogue.json')]);
+    if (!catalogFile) throw new Error('No catalogue found in that Drive folder.');
+    const [loadedSettings, catalog] = await Promise.all([
+      settingsFile ? drive(token, `${API}/${settingsFile.id}?alt=media`) : null,
+      drive(token, `${API}/${catalogFile.id}?alt=media`),
+    ]);
+    if (loadedSettings) { for (const k of Object.keys(DEFAULTS)) if (k in loadedSettings) cfg[k] = loadedSettings[k]; cfg.gdrive_folder_id = folder.id; saveCfg(); }
+    await idb.set('kv', 'catalog', catalog);
+    show(catalog);
+    $('#alert').insertAdjacentHTML('afterbegin', `<div class="alert info"><p>Loaded your catalogue${loadedSettings ? ' and settings' : ''} from Google Drive. Choose your show folder to rescan and keep adding sequences.</p></div>`);
+    toast('Loaded from Google Drive', 4000);
+  } catch (e) {
+    toast('Could not load from Google Drive: ' + e.message, 9000);
   } finally { setButtons(true); }
 }
 
@@ -1810,7 +1851,7 @@ function artHTML(r) {
 }
 function toast(msg, ms = 2600) { const el = $('#toast'); el.textContent = msg; el.classList.add('show'); clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove('show'), ms); }
 function showError(msg) { $('#alert').innerHTML = `<div class="alert"><p><strong>${esc(msg)}</strong></p></div>`; }
-function setButtons(on) { document.querySelectorAll('#headActions button, #pickShow, #resume').forEach(b => b.disabled = !on); }
+function setButtons(on) { document.querySelectorAll('#headActions button, #pickShow, #resume, #loadDrive').forEach(b => b.disabled = !on); }
 
 function drawString() {
   const svg = $('#string'), w = Math.max(320, svg.clientWidth || 1000), n = Math.round(w / 22);
@@ -2579,6 +2620,7 @@ $('#download').onclick = () => {
   const s = S.catalog.stats; if (s.missing || s.guess) download('songs_to_check.csv', csvText(S.catalog), 'text/csv');
 };
 $('#upload').onclick = uploadToDrive;
+$('#loadDrive').onclick = loadFromDrive;
 $('#main').addEventListener('click', e => {
   const el = e.target.closest('[data-id]'); if (!el) return;
   if (S.selecting) { togglePick(el.dataset.id); el.classList.toggle('sel', S.picked.has(el.dataset.id)); if (el.matches('.card')) el.setAttribute('aria-pressed', S.picked.has(el.dataset.id)); return; }
