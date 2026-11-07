@@ -350,7 +350,9 @@ dialog{max-height:94vh;overflow:auto}
   <form method="dialog" class="pane" id="sForm">
     <button class="close" aria-label="Close" value="cancel">×</button>
     <h2 id="sTitle">Settings</h2>
-    <div class="field"><span>Folders</span><ul class="folders" id="folderList"></ul></div>
+    <div class="field"><span>Folders</span><ul class="folders" id="folderList"></ul>
+      <small>Your layout folder is your actual xLights show (the one with <code>xlights_rgbeffects.xml</code> and your real props) — set this if the folder you scan for sequences is a library of vendor downloads rather than your real show, so model comparisons and the Models view use your own props, not a vendor's.</small>
+      <button class="btn" type="button" id="sLayout">Choose layout folder</button></div>
     <label class="check"><input type="checkbox" id="sZips"><span>Look inside .zip files for sequences and songs</span></label>
     <label class="check"><input type="checkbox" id="sBackups"><span>Include xLights backup folders</span></label>
     <label class="field"><span>Other folders to skip</span><input type="text" id="sSkip" spellcheck="false"><small>Separated by commas; * matches anything.</small></label>
@@ -567,7 +569,7 @@ function zipListCached(file, key) { if (!zipLists.has(key)) zipLists.set(key, zi
 
 // ------------------------------------------------------------------ walking the folders
 // A source is {kind:'handle', handle, name} (Chrome/Edge, remembered) or {kind:'files', files, name} (all browsers)
-const S = { show: null, music: [], seqs: null, index: null, catalog: null, report: null, tree: null, proposals: [], genreSel: new Set(), groupSel: new Set(), modelUniverse: null, xmodelIndex: null, modelMatchCache: null, selecting: false, picked: new Set() };
+const S = { show: null, music: [], layout: null, seqs: null, index: null, catalog: null, report: null, tree: null, proposals: [], genreSel: new Set(), groupSel: new Set(), modelUniverse: null, xmodelIndex: null, modelMatchCache: null, selecting: false, picked: new Set() };
 
 function skipReason(name) {
   if (!cfg.include_backups && BACKUP_DIRS.includes(name.toLowerCase())) return 'xLights backup folder';
@@ -669,6 +671,7 @@ async function pickFolder() {
 
 async function rememberFolders() {
   if (S.show?.kind === 'handle') await idb.set('kv', 'show', S.show.handle); else await idb.del('kv', 'show');
+  if (S.layout?.kind === 'handle') await idb.set('kv', 'layout', S.layout.handle); else await idb.del('kv', 'layout');
   await idb.set('kv', 'music', S.music.filter(m => m.kind === 'handle').map(m => m.handle));
 }
 
@@ -1015,10 +1018,25 @@ async function scan() {
     progress(0.01, `Looking through every folder in ${S.show.name}…`);
     const showFiles = await listSource(S.show, '', report);
     report.roots.push(S.show.name);
+    // Your layout folder (if set) is the actual xLights show with your real props -- the folder you scan
+    // for sequences is often just a library of vendor downloads, which never contains your own models.
+    let layoutFiles = [];
+    if (S.layout) {
+      if (S.layout.kind === 'handle' && (await S.layout.handle.queryPermission({mode: 'read'})) !== 'granted') {
+        report.errors.push({ path: S.layout.name, msg: 'Permission to read your layout folder was not given' });
+      } else {
+        progress(0.02, `Looking through your layout folder ${S.layout.name}…`);
+        layoutFiles = await listSource(S.layout, `layout:${S.layout.name}/`, report);
+        report.roots.push(S.layout.name + ' (layout)');
+      }
+    }
     S.modelUniverse = null;
-    const rgbEntry = showFiles.find(e => e.name.toLowerCase() === 'xlights_rgbeffects.xml');
+    const rgbEntry = layoutFiles.find(e => e.name.toLowerCase() === 'xlights_rgbeffects.xml')
+      || showFiles.find(e => e.name.toLowerCase() === 'xlights_rgbeffects.xml');
     if (rgbEntry) { try { S.modelUniverse = parseModelUniverse(await (await rgbEntry.getFile()).text()); } catch {} }
-    S.fseqPaths = new Set(showFiles.filter(e => ext(e.name) === '.fseq').map(e => e.path.toLowerCase()));
+    // Matched by file name only (not path): a vendor library and your real show rarely share the same
+    // folder structure, so a rendered .fseq in your layout folder won't sit at the sequence's own rel_path.
+    S.fseqNames = new Set([...showFiles, ...layoutFiles].filter(e => ext(e.name) === '.fseq').map(e => e.name.toLowerCase()));
     const musicFiles = [];
     for (const m of S.music) {
       if (m.kind === 'handle' && (await m.handle.queryPermission({mode: 'read'})) !== 'granted') {
@@ -1182,12 +1200,12 @@ function csvText(c) {
   return rows.map(r => r.map(q).join(',')).join('\r\n');
 }
 // Falcon Player plays rendered .fseq files, not .xsq sequences, so the playlist assumes xLights' default:
-// the .fseq is named the same as the sequence, in the same folder. fseqReady() checks that assumption
-// against .fseq files actually seen in the show folder during this session's scan, when known.
+// the .fseq is named the same as the sequence. fseqReady() checks that assumption against .fseq files
+// actually seen (in the show folder or your layout folder) during this session's scan, when known.
 const fseqNameFor = r => stemOf(r.file_name) + '.fseq';
 function fseqReady(r) {
-  if (!S.fseqPaths) return null;
-  return S.fseqPaths.has(joinPath(dirOf(r.rel_path), fseqNameFor(r)).toLowerCase());
+  if (!S.fseqNames) return null;
+  return S.fseqNames.has(fseqNameFor(r).toLowerCase());
 }
 function buildFppPlaylist(records, name) {
   const mainPlaylist = records.map(r => {
@@ -1998,17 +2016,20 @@ function buildXmapHint() {
 }
 const XMAPHINT_NAME = 'catalogue-mapping.xmaphint';
 async function saveMappingToShow() {
-  if (!S.show || S.show.kind !== 'handle') return toast("This browser can't save into your show folder. Chrome or Edge can.", 5000);
+  // Your layout folder is your actual xLights show, so maphints/ belongs there -- not in whatever
+  // folder you scan for sequences, which is often just a library of vendor downloads.
+  const target = S.layout || S.show;
+  if (!target || target.kind !== 'handle') return toast("This browser can't save into a folder. Chrome or Edge can. If you haven't set a layout folder (Settings), the mapping would otherwise be saved into your show folder.", 6000);
   const n = Object.values(cfg.model_map).filter(Boolean).length;
   if (!n) return toast('No mappings to save yet.', 4000);
   try {
-    if ((await S.show.handle.requestPermission({ mode: 'readwrite' })) !== 'granted') throw new Error('Permission to save into the show folder was not given.');
-    const dir = await S.show.handle.getDirectoryHandle('maphints', { create: true });
+    if ((await target.handle.requestPermission({ mode: 'readwrite' })) !== 'granted') throw new Error('Permission to save into the folder was not given.');
+    const dir = await target.handle.getDirectoryHandle('maphints', { create: true });
     let exists = false; try { await dir.getFileHandle(XMAPHINT_NAME); exists = true; } catch {}
-    if (exists && !confirm(`${XMAPHINT_NAME} already exists in maphints. Replace it with your current mappings?`)) return;
+    if (exists && !confirm(`${XMAPHINT_NAME} already exists in ${target.name}/maphints. Replace it with your current mappings?`)) return;
     const fh = await dir.getFileHandle(XMAPHINT_NAME, { create: true }), w = await fh.createWritable();
     await w.write(buildXmapHint()); await w.close();
-    toast(`Saved ${n} mapping${n === 1 ? '' : 's'} to maphints/${XMAPHINT_NAME}. xLights uses it automatically next time you import effects.`, 7000);
+    toast(`Saved ${n} mapping${n === 1 ? '' : 's'} to ${target.name}/maphints/${XMAPHINT_NAME}. xLights uses it automatically next time you import effects.`, 7000);
   } catch (e) { toast('Could not save the mapping: ' + e.message, 6000); }
 }
 function clearModelMap() {
@@ -2024,17 +2045,19 @@ function openModelsReport() {
   const uni = S.catalog.model_universe || {}, hasUniverse = (uni.models?.length || 0) + (uni.groups?.length || 0) > 0;
   const row = s => `<li><button class="link" data-jump="${esc(s.name)}">${esc(s.name)}</button> <span class="fine">${s.type === 'group' ? 'group' : 'model'} · ${fmtN(s.count)} sequence${s.count === 1 ? '' : 's'} · ${hm(s.duration)}</span></li>`;
   const mapped = Object.values(cfg.model_map).filter(Boolean);
+  const mapTarget = (S.layout || S.show)?.name;
   $('#modelsBody').innerHTML = `
+    ${hasUniverse ? '' : `<div class="alert warn" style="margin:0"><p><strong>No real layout found yet.</strong> This looks like every model/group below came from sequences, not from an xlights_rgbeffects.xml — if the folder you scan is a library of vendor downloads, that's expected: it won't have your own props. Pick your actual xLights show folder as your <strong>layout folder</strong> so comparisons and mappings use your real props.</p><button class="btn" id="mmPickLayout">Choose layout folder</button></div>`}
     ${mapped.length ? `<div><h3>Your mappings to other layouts (${mapped.length})</h3>
       <ul>${mapped.map(({ to, from }) => `<li>"${esc(from)}" → your "${esc(to)}"</li>`).join('')}</ul>
       <p class="fine" style="margin:0">Save these so xLights maps every future sequence from the same vendors automatically.</p>
-      <div class="actions"><button class="btn primary sm" id="mmSave">Save mapping to show folder</button><button class="btn sm" id="mmClear">Clear mapping</button></div></div>` : ''}
+      <div class="actions"><button class="btn primary sm" id="mmSave">Save mapping${mapTarget ? ` to ${esc(mapTarget)}` : ''}</button><button class="btn sm" id="mmClear">Clear mapping</button></div></div>` : ''}
     ${used.length ? `<div><h3>Used by at least one sequence (${used.length})</h3><ul>${used.map(row).join('')}</ul></div>`
       : '<p class="fine" style="margin:0">No models or groups were found in your sequences.</p>'}
     ${unused.length ? `<div><h3>Not used by any sequence yet (${unused.length})</h3><ul>${unused.map(s => `<li>${esc(s.name)} <span class="fine">${s.type}</span></li>`).join('')}</ul></div>`
-      : hasUniverse ? '<p class="fine" style="margin:0">Every model and group is used by at least one sequence.</p>'
-      : '<p class="fine" style="margin:0">Add your show\'s xlights_rgbeffects.xml next time you scan to also see props no sequence uses yet.</p>'}`;
+      : hasUniverse ? '<p class="fine" style="margin:0">Every model and group is used by at least one sequence.</p>' : ''}`;
   $('#mmSave')?.addEventListener('click', saveMappingToShow); $('#mmClear')?.addEventListener('click', clearModelMap);
+  $('#mmPickLayout')?.addEventListener('click', async () => { await chooseLayout(); openModelsReport(); });
   $('#modelsDlg').showModal();
 }
 $('#modelsBody').addEventListener('click', e => {
@@ -2090,10 +2113,10 @@ function openFppExport() {
   S.fppRecords = records;
   $('#fppName').value = S.show?.name || 'My show';
   const noSong = records.filter(r => r.media_status !== 'exempt' && !r.media_path).length;
-  const notReady = S.fseqPaths ? records.filter(r => !fseqReady(r)).length : 0;
+  const notReady = S.fseqNames ? records.filter(r => !fseqReady(r)).length : 0;
   $('#fppSummary').textContent = `${fmtN(records.length)} sequence${records.length === 1 ? '' : 's'} will be included.`
     + (noSong ? ` ${fmtN(noSong)} still need a song.` : '')
-    + (notReady ? ` ${fmtN(notReady)} don't have a rendered .fseq in your show folder yet.` : '');
+    + (notReady ? ` ${fmtN(notReady)} don't have a rendered .fseq yet.` : '');
   $('#fppDlg').showModal();
 }
 $('#fppExport').onclick = openFppExport;
@@ -2266,7 +2289,14 @@ function fixSection(r) {
 // local guess (shape or name match) pre-selected, and a dropdown to confirm or pick a different one.
 function modelCompareSection(r) {
   if (!S.catalog) return '';
-  const uni = S.catalog.model_universe || {}, mm = getModelMatches();
+  const uni = S.catalog.model_universe || {};
+  const usesAny = (r.models || []).length || (r.groups || []).length;
+  if (usesAny && !(uni.models?.length || uni.groups?.length)) {
+    return `<div class="fix"><h3>Compare with your layout</h3>
+      <p class="fine" style="margin:0">This sequence uses models/groups, but no real layout has been found yet — if the folder you scan is a library of vendor downloads, that's expected, since it won't have your own props.</p>
+      <div class="actions"><button class="btn" data-act="pickLayout">Choose layout folder</button></div></div>`;
+  }
+  const mm = getModelMatches();
   const rows = [...(r.models || []).map(n => ({ name: n, isModel: true, m: mm.get('m:' + n) })),
                 ...(r.groups || []).map(n => ({ name: n, isModel: false, m: mm.get('g:' + n) }))]
     .filter(x => !x.m || x.m.method !== 'exact');
@@ -2388,6 +2418,7 @@ $('#dBody').addEventListener('click', async e => {
   if (a === 'prev' || a === 'next') { const i = navIds.indexOf(curId) + (a === 'next' ? 1 : -1); if (navIds[i]) { curId = navIds[i]; picked = null; renderDetail(); } }
   if (a === 'copy') { try { await navigator.clipboard.writeText(r.abs_path); toast('Path copied'); } catch { toast(r.abs_path, 6000); } }
   if (a === 'rescan') { $('#detail').close(); if (S.show) { await scan(); if (S.seqs && recById(r.id)) openDetail(r.id); } else chooseShow(); }
+  if (a === 'pickLayout') { await chooseLayout(); if (recById(r.id)) renderDetail(); }
   if (a === 'exempt' || a === 'unexempt') {
     const list = cfg.no_audio_expected;
     if (a === 'exempt') { if (!list.includes(r.rel_path)) list.push(r.rel_path); const ov = cfg.overrides[r.rel_path]; if (ov) { delete ov.media; delete ov.linked; } }
@@ -2472,11 +2503,15 @@ function fillSettings() {
   $('#sGenres').value = cfg.genres.join('\n');
   const f = [];
   if (S.show) f.push(`<li><span>Show folder: ${esc(S.show.name)}</span></li>`);
+  if (S.layout) f.push(`<li><span>Layout folder: ${esc(S.layout.name)}</span><button class="btn" type="button" data-rm="layout">Remove</button></li>`);
   S.music.forEach((m, i) => f.push(`<li><span>Music folder: ${esc(m.name)}</span><button class="btn" type="button" data-rm="${i}">Remove</button></li>`));
   $('#folderList').innerHTML = f.join('') || '<li><span>No folders chosen yet</span></li>';
+  $('#sLayout').textContent = S.layout ? 'Change layout folder' : 'Choose layout folder';
 }
+$('#sLayout').onclick = chooseLayout;
 $('#folderList').addEventListener('click', async e => {
   const i = e.target.dataset.rm; if (i == null) return;
+  if (i === 'layout') { S.layout = null; await rememberFolders(); fillSettings(); toast('Layout folder removed. Rescan to update.'); return; }
   S.music.splice(+i, 1); await rememberFolders(); fillSettings(); toast('Music folder removed. Rescan to update.');
 });
 async function readSettingsForm() {
@@ -2525,6 +2560,11 @@ $('#addMusic').onclick = async () => {
   S.music.push(src); await rememberFolders();
   if (S.show) scan(); else toast('Music folder added');
 };
+async function chooseLayout() {
+  const src = await pickFolder(); if (!src) return;
+  S.layout = src; await rememberFolders();
+  if (S.show) await scan(); else toast('Layout folder added');
+}
 $('#download').onclick = () => {
   if (!S.catalog) return;
   download('xlights_catalogue.html', standaloneHtml(S.catalog), 'text/html');
@@ -2553,8 +2593,10 @@ document.addEventListener('keydown', e => {
   S.proposals = (await idb.get('kv', 'proposals')) || [];
   const embedded = $('#catalog-data').textContent.trim();
   const showH = await idb.get('kv', 'show');
+  const layoutH = await idb.get('kv', 'layout');
   const musicH = (await idb.get('kv', 'music')) || [];
   if (showH) { S.show = { kind: 'handle', handle: showH, name: showH.name }; S.music = musicH.map(h => ({ kind: 'handle', handle: h, name: h.name })); }
+  if (layoutH) S.layout = { kind: 'handle', handle: layoutH, name: layoutH.name };
   if (embedded) {
     try { show(JSON.parse(embedded)); $('#alert').insertAdjacentHTML('afterbegin', `<div class="alert info"><p>This is a saved catalogue from ${esc(new Date(S.catalog.generated).toLocaleDateString())}. Rescan to bring it up to date.</p></div>`); return; } catch {}
   }
