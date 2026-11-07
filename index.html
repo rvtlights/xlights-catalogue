@@ -376,6 +376,7 @@ dialog{max-height:94vh;overflow:auto}
       <label class="btn" for="sImport">Import settings</label>
       <input type="file" id="sImport" accept=".json,application/json" hidden>
       <button class="btn" type="button" id="sClear">Clear saved data</button>
+      <button class="btn" type="button" id="sReset">Reset everything</button>
     </div>
   </form>
 </dialog>
@@ -2545,6 +2546,13 @@ $('#sImport').onchange = async e => {
 $('#sClear').onclick = async () => {
   if (!confirm('Forget the saved catalogue, remembered folders, cached song details and pending suggestions? Your settings and accepted changes are kept.')) return;
   for (const s of ['kv','seq','audio','online']) await idb.clear(s);
+  location.reload();
+};
+$('#sReset').onclick = async () => {
+  if (!confirm("Reset everything and start completely fresh? This forgets your settings (vendor names, genres, exempt patterns, model mappings), every song and vendor you've fixed, remembered folders, cached song details, pending suggestions, and your Anthropic API key if you saved one. Export settings first if you want to keep a copy. This can't be undone.")) return;
+  for (const s of ['kv','seq','audio','online']) await idb.clear(s);
+  store.del('settings'); store.del('view'); store.del('apikey');
+  try { sessionStorage.removeItem('xlc-key'); } catch {}
   location.reload();
 };
 
