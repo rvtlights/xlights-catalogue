@@ -189,9 +189,24 @@ dialog{max-height:94vh;overflow:auto}
 .mrow:last-child{border-bottom:0}
 .mrow select{background:var(--night);border:1px solid var(--wire);border-radius:var(--r-sm);padding:6px 8px;flex:none;max-width:45%}
 .btn.sm{padding:6px 10px;font-size:.9rem}
+.gate{position:fixed;inset:0;z-index:9999;background:var(--night);display:grid;place-items:center;padding:24px;text-align:center}
+.gate h1{font:800 clamp(1.8rem,5vw,3rem)/1 var(--display);margin:0 0 8px}
+.gate p{color:var(--mist);margin:0 0 20px;max-width:40ch}
+.gate form{display:flex;flex-direction:column;gap:12px;width:100%;max-width:280px}
+.gate input{padding:11px 14px;background:var(--deep);border:1px solid var(--wire);border-radius:999px;text-align:center}
+.gate .err{color:var(--holly);font-size:.9rem;margin:-4px 0 0}
 </style>
 </head>
 <body>
+<div class="gate" id="gate" hidden>
+  <h1>Sequence catalogue</h1>
+  <p>This is a private tool. Enter the password to continue.</p>
+  <form id="gateForm">
+    <input type="password" id="gatePw" autocomplete="off" aria-label="Password">
+    <button class="btn primary" type="submit">Enter</button>
+    <p class="err" id="gateErr" hidden>That's not it. Try again.</p>
+  </form>
+</div>
 <header class="wrap">
   <svg class="string" id="string" aria-hidden="true"></svg>
   <h1>Sequence catalogue</h1>
@@ -394,6 +409,11 @@ dialog{max-height:94vh;overflow:auto}
 // Snapshot of this page before anything is rendered: used to write the standalone catalogue.
 const PRISTINE = '<!doctype html>\n' + document.documentElement.outerHTML;
 const VERSION = '3.1.0';
+// A deterrent, not a lock: a determined visitor can read this file and bypass it. hash() is the
+// same non-cryptographic hash used elsewhere (cache keys, record ids) -- not real crypto, which is
+// fine here since the goal is keeping casual visitors from stumbling onto a live personal catalogue,
+// not defending against anyone who'd actually read the source.
+const GATE_HASH = 'f31ffa68abdd20c4';
 const LIBS = {
   tags: 'https://cdn.jsdelivr.net/npm/jsmediatags@3.9.7/dist/jsmediatags.min.js',
   gis: 'https://accounts.google.com/gsi/client',
@@ -508,6 +528,23 @@ function matches(a, b) {
 }
 const similarity = (a, b) => (a.length + b.length) ? 2 * matches(a, b) / (a.length + b.length) : 0;
 function hash(str) { let h1 = 0xdeadbeef, h2 = 0x41c6ce57; for (let i = 0; i < str.length; i++) { const c = str.charCodeAt(i); h1 = Math.imul(h1 ^ c, 2654435761); h2 = Math.imul(h2 ^ c, 1597334677); } h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909); h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909); return (h2 >>> 0).toString(16).padStart(8, '0') + (h1 >>> 0).toString(16).padStart(8, '0'); }
+// Blocks startup until the right password is entered once per browser/device (incl. a downloaded
+// standalone catalogue, which is this same file). See the GATE_HASH comment: a deterrent, not a lock.
+function checkGate() {
+  if (store.get('gateOk', false)) return Promise.resolve();
+  const gate = $('#gate'); gate.hidden = false;
+  return new Promise(resolve => {
+    $('#gateForm').addEventListener('submit', e => {
+      e.preventDefault();
+      if (hash($('#gatePw').value) === GATE_HASH) {
+        store.set('gateOk', true); gate.hidden = true; resolve();
+      } else {
+        $('#gateErr').hidden = false; $('#gatePw').value = ''; $('#gatePw').focus();
+      }
+    });
+    $('#gatePw').focus();
+  });
+}
 async function pool(items, n, fn) {
   let i = 0; const out = new Array(items.length);
   await Promise.all(Array.from({length: Math.min(n, items.length)}, async () => { while (i < items.length) { const k = i++; out[k] = await fn(items[k], k); } }));
@@ -2639,6 +2676,7 @@ document.addEventListener('keydown', e => {
 
 // ------------------------------------------------------------------ start
 (async () => {
+  await checkGate();
   drawString();
   S.proposals = (await idb.get('kv', 'proposals')) || [];
   const embedded = $('#catalog-data').textContent.trim();
