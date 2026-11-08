@@ -2460,7 +2460,7 @@ function modelCompareSection(r) {
   const row = ({ name, isModel, m }) => {
     const pool = (isModel ? uni.models : uni.groups) || [];
     const options = `<option value="">Not in my layout</option>` + pool.map(p => `<option value="${esc(p)}" ${m?.name === p ? 'selected' : ''}>${esc(p)}</option>`).join('');
-    return `<div class="mrow"><div><strong>${esc(name)}</strong> <span class="fine">${isModel ? 'model' : 'group'}${m ? ` · ${esc(m.reason)}` : ' · no local match found'}</span></div>
+    return `<div class="mrow"><div><strong>${esc(name)}</strong> <span class="fine">${isModel ? 'model' : 'group'} · ${pool.length} of your ${isModel ? 'models' : 'groups'} to pick from${m ? ` · ${esc(m.reason)}` : ' · no local match found'}</span></div>
       <select data-mm="${esc(name)}">${options}</select></div>`;
   };
   return `<div class="fix"><h3>Compare with your layout</h3>
