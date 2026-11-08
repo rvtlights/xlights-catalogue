@@ -1294,23 +1294,31 @@ function standaloneHtml(c) {
 const AI = { running: false, abort: null, tokens: 0, artUrls: new Set(), webUrls: new Set(), runRules: [], log: [] };
 const apiKey = () => sessionStorage.getItem('xlc-key') || store.get('apikey', '');
 
-const AI_SYSTEM = `You help organise a Christmas / holiday light show built with xLights. You are working on a catalogue of xLights sequences (.xsq files, .xsqz packages, some inside vendor .zip downloads). The app has already walked every folder and matched what it could with simple rules. You handle the cases those rules could not settle.
+const AI_SYSTEM_INTRO = `You help organise a Christmas / holiday light show built with xLights. You are working on a catalogue of xLights sequences (.xsq files, .xsqz packages, some inside vendor .zip downloads). The app has already walked every folder and matched what it could with simple rules. You handle the cases those rules could not settle.
 
-Each sequence you receive lists the tasks to do for it:
-- "song": find the audio file this sequence was made for. Search with find_audio using the expected file name, the song title, and the artist. Candidates can be anywhere, including inside zip files (paths containing "!/"). Confirm with read_audio_tags: matching title/artist tags and a song length within about 3 seconds of the sequence length is strong evidence (sequences are usually exactly as long as their song, sometimes a few seconds longer). Different versions of the same song (radio edit, live, remix) have different lengths, so length is the best tie-breaker. Use list_folder to look around the sequence's own folder. If the sequence is clearly an intro, countdown, announcement, loop or animation that would not have a song, use propose_no_song. If several sequences you're looking at share a folder or file-name pattern and are clearly all intros/countdowns/loops with no song by design, use propose_no_song_rule instead so every sequence matching that pattern (including ones added later) is covered at once. If you cannot find a convincing match, do not guess: leave it and mention it in finish.
-- "vendor": work out the business that sold the sequence. The author, email domain, website and folder names are clues. Use web search (if available) to confirm the vendor's proper business name. Prefer propose_vendor_rule with patterns like "*domain.com*" or "Vendors/Name/*" so that every sequence from that vendor is covered, and reuse an existing vendor name exactly when it is the same company. Use propose_vendor only for one-off cases.
-- "details": fill in a missing artist (and fix an obviously wrong title) from audio tags, the file name, or a web search. Only propose values you are confident about.
-- "art": find album art with search_album_art and propose an image whose artist and title match. Prefer the original studio release. Skip if nothing matches well.
-- "link": find this sequence's own product page on the vendor's website, using web search (for example: site:vendor-domain "song title", or the vendor name plus "xlights" and the title). The right page sells this sequence for this song; not the vendor's home page, a category or search page, or another vendor's page. Vendors sometimes sell several versions of one song: prefer the page whose name matches the sequence's file name or artist. Propose the page with propose_sequence_link using the exact URL from a search result. If you can't find it confidently, leave it. If the vendor isn't a business that sells sequences (for example a person's own name, "Me", or the show owner), skip it without searching.
-- "genre": choose one genre from the list given in the batch, using propose_genres (one call can cover many sequences). Judge by the specific recording, not the song: "Jingle Bell Rock" by Bobby Helms is Rock 'n' Roll & Oldies but by Hall & Oates is Christmas Pop. Guide: crooners and vintage standards (Bing Crosby, Nat King Cole, Frank Sinatra, Andy Williams, Perry Como) are Classic Christmas; 1950s-60s rock 'n' roll and girl groups (Brenda Lee, Bobby Helms, the Ronettes) are Rock 'n' Roll & Oldies; modern pop (Mariah Carey, Wham!, Ariana Grande, Michael Bublé's pop covers) is Christmas Pop; Trans-Siberian Orchestra is Rock & Metal; Mannheim Steamroller and film scores are Orchestral & Instrumental; Pentatonix is A Cappella; songs from films and children's shows (Frozen, The Grinch, Rudolph) are Kids & Movies; intros, countdowns, announcements and loops without music are Show Elements. If the artist is unknown, use the song title, file and folder names, audio tags or a web search. Only suggest a genre outside the list when none fits at all.
-- "models": this sequence was made for a different physical layout. Its models/groups that don't already match something of yours by name are listed in needs_model_map (each with its type and any local best guess already found by comparing shape and pixel counts, which you should trust over a name-only hunch). Your own layout's models and groups are listed below. Judge by what the prop actually is, not just the name: a vendor's "Arch 1" and your "Arch A" are likely the same arch even though the names differ; don't match a vendor's "Mega Tree" to your "Spiral Tree" just because both are trees if nothing else lines up. The same vendor model name usually recurs across many of that vendor's sequences, so once you're confident about a mapping, use propose_model_map for every sequence in this batch that needs it rather than deciding it fresh each time. If nothing in your layout plays the same role, don't force a match: leave it and mention it in finish.
-
-Rules:
+Each sequence you receive lists the tasks to do for it:`;
+// Keyed exactly like cfg.ai_tasks, so buildAiSystem can send only the instructions for tasks actually
+// selected this run -- a run that only wants "models" fixed has no use for the song/vendor/art/etc.
+// instructions padding out every batch's (cached, but not free on a first write or a cold cache) system prompt.
+const AI_TASK_PROMPTS = {
+  song: `"song": find the audio file this sequence was made for. Search with find_audio using the expected file name, the song title, and the artist. Candidates can be anywhere, including inside zip files (paths containing "!/"). Confirm with read_audio_tags: matching title/artist tags and a song length within about 3 seconds of the sequence length is strong evidence (sequences are usually exactly as long as their song, sometimes a few seconds longer). Different versions of the same song (radio edit, live, remix) have different lengths, so length is the best tie-breaker. Use list_folder to look around the sequence's own folder. If the sequence is clearly an intro, countdown, announcement, loop or animation that would not have a song, use propose_no_song. If several sequences you're looking at share a folder or file-name pattern and are clearly all intros/countdowns/loops with no song by design, use propose_no_song_rule instead so every sequence matching that pattern (including ones added later) is covered at once. If you cannot find a convincing match, do not guess: leave it and mention it in finish.`,
+  vendor: `"vendor": work out the business that sold the sequence. The author, email domain, website and folder names are clues. Use web search (if available) to confirm the vendor's proper business name. Prefer propose_vendor_rule with patterns like "*domain.com*" or "Vendors/Name/*" so that every sequence from that vendor is covered, and reuse an existing vendor name exactly when it is the same company. Use propose_vendor only for one-off cases.`,
+  details: `"details": fill in a missing artist (and fix an obviously wrong title) from audio tags, the file name, or a web search. Only propose values you are confident about.`,
+  art: `"art": find album art with search_album_art and propose an image whose artist and title match. Prefer the original studio release. Skip if nothing matches well.`,
+  link: `"link": find this sequence's own product page on the vendor's website, using web search (for example: site:vendor-domain "song title", or the vendor name plus "xlights" and the title). The right page sells this sequence for this song; not the vendor's home page, a category or search page, or another vendor's page. Vendors sometimes sell several versions of one song: prefer the page whose name matches the sequence's file name or artist. Propose the page with propose_sequence_link using the exact URL from a search result. If you can't find it confidently, leave it. If the vendor isn't a business that sells sequences (for example a person's own name, "Me", or the show owner), skip it without searching.`,
+  genre: `"genre": choose one genre from the list given in the batch, using propose_genres (one call can cover many sequences). Judge by the specific recording, not the song: "Jingle Bell Rock" by Bobby Helms is Rock 'n' Roll & Oldies but by Hall & Oates is Christmas Pop. Guide: crooners and vintage standards (Bing Crosby, Nat King Cole, Frank Sinatra, Andy Williams, Perry Como) are Classic Christmas; 1950s-60s rock 'n' roll and girl groups (Brenda Lee, Bobby Helms, the Ronettes) are Rock 'n' Roll & Oldies; modern pop (Mariah Carey, Wham!, Ariana Grande, Michael Bublé's pop covers) is Christmas Pop; Trans-Siberian Orchestra is Rock & Metal; Mannheim Steamroller and film scores are Orchestral & Instrumental; Pentatonix is A Cappella; songs from films and children's shows (Frozen, The Grinch, Rudolph) are Kids & Movies; intros, countdowns, announcements and loops without music are Show Elements. If the artist is unknown, use the song title, file and folder names, audio tags or a web search. Only suggest a genre outside the list when none fits at all.`,
+  models: `"models": this sequence was made for a different physical layout. Its models/groups that don't already match something of yours by name are listed in needs_model_map (each with its type and any local best guess already found by comparing shape and pixel counts, which you should trust over a name-only hunch). Your own layout's models and groups are listed below. Judge by what the prop actually is, not just the name: a vendor's "Arch 1" and your "Arch A" are likely the same arch even though the names differ; don't match a vendor's "Mega Tree" to your "Spiral Tree" just because both are trees if nothing else lines up. The same vendor model name usually recurs across many of that vendor's sequences, so once you're confident about a mapping, use propose_model_map for every sequence in this batch that needs it rather than deciding it fresh each time. If nothing in your layout plays the same role, don't force a match: leave it and mention it in finish.`,
+};
+const AI_SYSTEM_RULES = `Rules:
 - Only use file paths returned by your tools, and only image URLs returned by search_album_art. Never invent them.
 - A sequence may list "previously_rejected": suggestions you made in an earlier run that the user turned down. Don't propose the same thing again for that sequence unless you have new, different evidence than before.
 - Confidence is 0 to 1: 0.9+ means you verified it (e.g. tags and length match), 0.6 to 0.9 means likely, below 0.6 do not propose.
 - Keep reasons short and specific, e.g. "Title and artist tags match; song 3:05 vs sequence 3:05".
 - Be efficient: batch your thinking, avoid repeating searches, and call finish once every sequence in the batch has been handled.`;
+function buildAiSystem(tasks) {
+  const bullets = Object.entries(AI_TASK_PROMPTS).filter(([k]) => tasks[k]).map(([, v]) => '- ' + v).join('\n');
+  return `${AI_SYSTEM_INTRO}\n${bullets}\n\n${AI_SYSTEM_RULES}`;
+}
 
 const AI_TOOLS = [
   { name: 'get_sequence', description: 'Full details of a sequence in the catalogue by id.', input_schema: { type: 'object', properties: { sequence_id: { type: 'string' } }, required: ['sequence_id'] } },
@@ -1401,8 +1409,12 @@ function unmappedModels(r) {
   }
   return out;
 }
-function seqInfo(r) {
-  const rejected = rejectedNotes(r), needsMap = unmappedModels(r);
+// tasks (the batch's own tasksFor(r) result, when known) skips computing/sending needs_model_map for a
+// sequence that isn't up for the "models" task this run -- it was previously sent for every sequence
+// regardless, padding every batch's prompt with model/group mapping detail Claude had no task to act on.
+function seqInfo(r, tasks) {
+  tasks ||= tasksFor(r);
+  const rejected = rejectedNotes(r), needsMap = tasks.includes('models') ? unmappedModels(r) : [];
   return { id: r.id, file: r.rel_path, in_zip: r.in_zip || undefined, title: r.title, artist: r.artist || null, album: r.album || null,
     vendor: r.vendor, vendor_from: r.vendor_source, author: r.author || null, author_email: r.author_email || null, author_website: r.author_website || null,
     song_link: r.music_url || null, notes: r.comment || null, sequence_type: r.seq_type || null,
@@ -1605,24 +1617,28 @@ function describeCall(name, input) {
 }
 
 async function runBatch(batch, n, of) {
-  const vendorsInUse = [...new Set(S.catalog.sequences.filter(r => ['rule', 'author', 'claude'].includes(r.vendor_source)).map(r => r.vendor)),
-    ...S.proposals.filter(p => p.type.startsWith('vendor') && p.status !== 'rejected').map(p => p.data.vendor)];
-  const payload = batch.map(({ r, tasks }) => ({ tasks, ...seqInfo(r) }));
-  const messages = [{ role: 'user', content:
-    `Batch ${n} of ${of}. Show folder: "${S.show.name}". Music folders: ${S.music.map(m => `"music:${m.name}"`).join(', ') || 'none'}. `
-    + `${fmtN(S.index.count)} song/video files are indexed.\n`
-    + `Vendor names already in use: ${JSON.stringify([...new Set(vendorsInUse)].slice(0, 80))}\n`
-    + `Genres to choose from: ${JSON.stringify(cfg.genres)}\n`
-    + `Your layout's models: ${JSON.stringify((S.catalog.model_universe?.models || []).slice(0, 300))}\n`
-    + `Your layout's groups: ${JSON.stringify((S.catalog.model_universe?.groups || []).slice(0, 300))}\n\n`
-    + `<sequences>\n${JSON.stringify(payload, null, 1)}\n</sequences>` }];
+  // Context lines only cost tokens when they're actually relevant to a task someone in this batch has --
+  // a batch doing nothing but song-matching shouldn't also carry every vendor name, the genre list, and
+  // (for a large layout) hundreds of model/group names it has no use for.
+  const tasksInBatch = new Set(batch.flatMap(b => b.tasks));
+  const vendorsInUse = tasksInBatch.has('vendor') ? [...new Set(S.catalog.sequences.filter(r => ['rule', 'author', 'claude'].includes(r.vendor_source)).map(r => r.vendor)),
+    ...S.proposals.filter(p => p.type.startsWith('vendor') && p.status !== 'rejected').map(p => p.data.vendor)] : [];
+  const payload = batch.map(({ r, tasks }) => ({ tasks, ...seqInfo(r, tasks) }));
+  const context = [
+    `Batch ${n} of ${of}. Show folder: "${S.show.name}". Music folders: ${S.music.map(m => `"music:${m.name}"`).join(', ') || 'none'}. ${fmtN(S.index.count)} song/video files are indexed.`,
+    tasksInBatch.has('vendor') ? `Vendor names already in use: ${JSON.stringify([...new Set(vendorsInUse)].slice(0, 80))}` : '',
+    tasksInBatch.has('genre') ? `Genres to choose from: ${JSON.stringify(cfg.genres)}` : '',
+    tasksInBatch.has('models') ? `Your layout's models: ${JSON.stringify((S.catalog.model_universe?.models || []).slice(0, 300))}` : '',
+    tasksInBatch.has('models') ? `Your layout's groups: ${JSON.stringify((S.catalog.model_universe?.groups || []).slice(0, 300))}` : '',
+  ].filter(Boolean).join('\n');
+  const messages = [{ role: 'user', content: `${context}\n\n<sequences>\n${JSON.stringify(payload, null, 1)}\n</sequences>` }];
   const custom = AI_TOOLS.map((t, i) => i === AI_TOOLS.length - 1 ? { ...t, cache_control: { type: 'ephemeral' } } : t);
   const tools = cfg.ai_web && !AI.noWeb ? [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }, ...custom] : custom;
   const batchIds = new Set(batch.map(b => b.r.id));
   for (let turn = 0; turn < 16; turn++) {
     let resp;
     try {
-      resp = await callClaude({ model: cfg.ai_model, max_tokens: 4096, system: [{ type: 'text', text: AI_SYSTEM, cache_control: { type: 'ephemeral' } }], tools, messages }, AI.abort.signal);
+      resp = await callClaude({ model: cfg.ai_model, max_tokens: 4096, system: [{ type: 'text', text: buildAiSystem(cfg.ai_tasks), cache_control: { type: 'ephemeral' } }], tools, messages }, AI.abort.signal);
     } catch (e) {
       if (e.status === 400 && /web.?search/i.test(e.message) && !AI.noWeb) {
         AI.noWeb = true; const wi = tools.findIndex(t => t.name === 'web_search'); if (wi >= 0) tools.splice(wi, 1);
