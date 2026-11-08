@@ -2457,10 +2457,17 @@ function modelCompareSection(r) {
                 ...(r.groups || []).map(n => ({ name: n, isModel: false, m: mm.get('g:' + n) }))]
     .filter(x => !x.m || x.m.method !== 'exact');
   if (!rows.length) return '';
+  // The destination pool is your models AND groups together, not just whichever type the vendor's name
+  // happens to be -- xLights' own .xmaphint (and Claude's propose_model_map) match purely by name, with no
+  // such restriction, so a vendor's single combined prop may genuinely belong mapped to one of your groups
+  // of separate models, or vice versa.
   const row = ({ name, isModel, m }) => {
-    const pool = (isModel ? uni.models : uni.groups) || [];
-    const options = `<option value="">Not in my layout</option>` + pool.map(p => `<option value="${esc(p)}" ${m?.name === p ? 'selected' : ''}>${esc(p)}</option>`).join('');
-    return `<div class="mrow"><div><strong>${esc(name)}</strong> <span class="fine">${isModel ? 'model' : 'group'} · ${pool.length} of your ${isModel ? 'models' : 'groups'} to pick from${m ? ` · ${esc(m.reason)}` : ' · no local match found'}</span></div>
+    const opt = p => `<option value="${esc(p)}" ${m?.name === p ? 'selected' : ''}>${esc(p)}</option>`;
+    const myModels = uni.models || [], myGroups = uni.groups || [];
+    const options = `<option value="">Not in my layout</option>`
+      + (myModels.length ? `<optgroup label="Models">${myModels.map(opt).join('')}</optgroup>` : '')
+      + (myGroups.length ? `<optgroup label="Groups">${myGroups.map(opt).join('')}</optgroup>` : '');
+    return `<div class="mrow"><div><strong>${esc(name)}</strong> <span class="fine">${isModel ? 'model' : 'group'} · ${myModels.length + myGroups.length} of your models/groups to pick from${m ? ` · ${esc(m.reason)}` : ' · no local match found'}</span></div>
       <select data-mm="${esc(name)}">${options}</select></div>`;
   };
   return `<div class="fix"><h3>Compare with your layout</h3>
