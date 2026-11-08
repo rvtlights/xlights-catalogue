@@ -1103,7 +1103,7 @@ async function scan() {
     // models belong to which group), so group mapping can compare composition, not just names. Any such
     // file other than the one already read as your own layout counts; a name/membership collision between
     // two different vendors' layouts is dropped rather than guessed at.
-    const vendorRgbEntries = showFiles.filter(e => e.name.toLowerCase() === 'xlights_rgbeffects.xml' && e !== rgbEntry);
+    const vendorRgbEntries = [...showFiles, ...zipped].filter(e => e.name.toLowerCase() === 'xlights_rgbeffects.xml' && e !== rgbEntry);
     report.vendorLayouts = vendorRgbEntries.length;
     for (const e of vendorRgbEntries) {
       try {
