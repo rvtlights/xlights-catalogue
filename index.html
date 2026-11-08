@@ -618,6 +618,7 @@ function skipReason(name) {
 }
 function newReport() {
   return { folders: 0, files: 0, seq: 0, xsqz: 0, legacy: 0, media: 0, zips: 0, zipOpened: 0, zipSeq: 0, zipMedia: 0, xmodels: 0, vendorLayouts: 0,
+           layoutFile: null, layoutModels: null, layoutGroups: null, layoutError: null,
            skipped: [], errors: [], duplicates: [], roots: [] };
 }
 
@@ -1073,7 +1074,15 @@ async function scan() {
     S.modelUniverse = null; S.vendorGroupMembers = new Map();
     const rgbEntry = layoutFiles.find(e => e.name.toLowerCase() === 'xlights_rgbeffects.xml')
       || showFiles.find(e => e.name.toLowerCase() === 'xlights_rgbeffects.xml');
-    if (rgbEntry) { try { S.modelUniverse = parseModelUniverse(await (await rgbEntry.getFile()).text()); } catch {} }
+    // Surfaced in the scan report so "my groups aren't showing" can be told apart from "the file wasn't
+    // found this scan, so the catalogue is still carrying an older scan's model_universe" -- that fallback
+    // (below, in assemble()) is deliberate, but needs to be visible rather than silently indistinguishable
+    // from a fresh, empty read.
+    report.layoutFile = rgbEntry ? rgbEntry.path : null;
+    if (rgbEntry) {
+      try { S.modelUniverse = parseModelUniverse(await (await rgbEntry.getFile()).text()); report.layoutModels = S.modelUniverse.models.length; report.layoutGroups = S.modelUniverse.groups.length; }
+      catch (e) { report.layoutError = e.message; }
+    }
     // Matched by file name only (not path): a vendor library and your real show rarely share the same
     // folder structure, so a rendered .fseq in your layout folder won't sit at the sequence's own rel_path.
     S.fseqNames = new Set([...showFiles, ...layoutFiles].filter(e => ext(e.name) === '.fseq').map(e => e.name.toLowerCase()));
@@ -1973,6 +1982,9 @@ function openReport() {
       r.xmodels ? `${fmtN(r.xmodels)} bundled model file${r.xmodels === 1 ? '' : 's'} (.xmodel), used to compare shape with your own models` : '',
       r.vendorLayouts ? `${fmtN(r.vendorLayouts)} vendor-shipped layout file${r.vendorLayouts === 1 ? '' : 's'} (xlights_rgbeffects.xml), used to compare group membership with your own groups` : '',
     ].filter(Boolean))}</ul></div>
+    <div><h3>Your own layout</h3>${r.layoutFile
+      ? `<p style="margin:0">Read <strong>${esc(r.layoutFile)}</strong> this scan: <strong>${fmtN(r.layoutModels)}</strong> model${r.layoutModels === 1 ? '' : 's'}, <strong>${fmtN(r.layoutGroups)}</strong> group${r.layoutGroups === 1 ? '' : 's'}.${r.layoutError ? ` Couldn't fully read it: ${esc(r.layoutError)}` : ''}</p>`
+      : `<p style="margin:0">No xlights_rgbeffects.xml was found this scan. ${S.catalog?.model_universe?.models?.length || S.catalog?.model_universe?.groups?.length ? "The models/groups shown elsewhere are left over from an earlier scan that did find one." : "Nothing of yours is loaded for model/group comparisons."}</p>`}</div>
     ${r.skipped.length ? `<div><h3>Skipped (${r.skipped.length})</h3><ul>${li(r.skipped.slice(0, 200).map(s => `${esc(s.path)}: ${esc(s.why)}`))}</ul><p class="fine">Change what's skipped in Settings.</p></div>` : ''}
     ${r.errors.length ? `<div><h3>Couldn't read (${r.errors.length})</h3><ul>${li(r.errors.slice(0, 200).map(e => `${esc(e.path)}: ${esc(e.msg)}`))}</ul></div>` : ''}
     ${r.duplicates.length ? `<div><h3>Zipped copies left out (${r.duplicates.length})</h3><ul>${li(r.duplicates.slice(0, 200).map(esc))}</ul><p class="fine">These sequences are already unzipped elsewhere in your show folder.</p></div>` : ''}`;
