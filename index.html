@@ -1309,7 +1309,7 @@ const AI_TASK_PROMPTS = {
   art: `"art": find album art with search_album_art and propose an image whose artist and title match. Prefer the original studio release. Skip if nothing matches well.`,
   link: `"link": find this sequence's own product page on the vendor's website, using web search (for example: site:vendor-domain "song title", or the vendor name plus "xlights" and the title). The right page sells this sequence for this song; not the vendor's home page, a category or search page, or another vendor's page. Vendors sometimes sell several versions of one song: prefer the page whose name matches the sequence's file name or artist. Propose the page with propose_sequence_link using the exact URL from a search result. If you can't find it confidently, leave it. If the vendor isn't a business that sells sequences (for example a person's own name, "Me", or the show owner), skip it without searching.`,
   genre: `"genre": choose one genre from the list given in the batch, using propose_genres (one call can cover many sequences). Judge by the specific recording, not the song: "Jingle Bell Rock" by Bobby Helms is Rock 'n' Roll & Oldies but by Hall & Oates is Christmas Pop. Guide: crooners and vintage standards (Bing Crosby, Nat King Cole, Frank Sinatra, Andy Williams, Perry Como) are Classic Christmas; 1950s-60s rock 'n' roll and girl groups (Brenda Lee, Bobby Helms, the Ronettes) are Rock 'n' Roll & Oldies; modern pop (Mariah Carey, Wham!, Ariana Grande, Michael Bublé's pop covers) is Christmas Pop; Trans-Siberian Orchestra is Rock & Metal; Mannheim Steamroller and film scores are Orchestral & Instrumental; Pentatonix is A Cappella; songs from films and children's shows (Frozen, The Grinch, Rudolph) are Kids & Movies; intros, countdowns, announcements and loops without music are Show Elements. If the artist is unknown, use the song title, file and folder names, audio tags or a web search. Only suggest a genre outside the list when none fits at all.`,
-  models: `"models": this sequence was made for a different physical layout. Its models/groups that don't already match something of yours by name are listed in needs_model_map (each with its type and any local best guess already found by comparing shape and pixel counts, which you should trust over a name-only hunch). Your own layout's models and groups are listed below. Judge by what the prop actually is, not just the name: a vendor's "Arch 1" and your "Arch A" are likely the same arch even though the names differ; don't match a vendor's "Mega Tree" to your "Spiral Tree" just because both are trees if nothing else lines up. The same vendor model name usually recurs across many of that vendor's sequences, so once you're confident about a mapping, use propose_model_map for every sequence in this batch that needs it rather than deciding it fresh each time. If nothing in your layout plays the same role, don't force a match: leave it and mention it in finish.`,
+  models: `"models": this sequence was made for a different physical layout. Its models/groups that don't already match something of yours by name are listed in needs_model_map (each with its type and any local best guess already found by comparing shape and pixel counts, which you should trust over a name-only hunch); needs_model_map_more, if present, means a mega sequence used even more than that -- not shown, to keep the prompt a sane size, but almost always names you've already seen elsewhere in the batch since the same vendor reuses the same prop names across their sequences. Your own layout's models and groups are listed below. Judge by what the prop actually is, not just the name: a vendor's "Arch 1" and your "Arch A" are likely the same arch even though the names differ; don't match a vendor's "Mega Tree" to your "Spiral Tree" just because both are trees if nothing else lines up. The same vendor model name usually recurs across many of that vendor's sequences, so once you're confident about a mapping, use propose_model_map for every sequence in this batch that needs it rather than deciding it fresh each time. If nothing in your layout plays the same role, don't force a match: leave it and mention it in finish.`,
 };
 const AI_SYSTEM_RULES = `Rules:
 - Only use file paths returned by your tools, and only image URLs returned by search_album_art. Never invent them.
@@ -1400,23 +1400,34 @@ function unmappedModels(r) {
   const mm = getModelMatches(), uni = S.catalog?.model_universe || {}, hints = S.catalog?.xmodel_hints || {}, vendorGroups = S.catalog?.vendor_group_members || {};
   const myModelPool = (uni.models || []).map(n => ({ name: n, attrs: uni.attrs?.[n.toLowerCase()] }));
   const myGroupPool = (uni.groups || []).map(n => ({ name: n, attrs: null }));
-  const out = [];
-  for (const n of r.models || []) { if (!mm.get('m:' + n)) out.push({ name: n, type: 'model', best_guess: bestGuess(n, hints[n.toLowerCase()], myModelPool) }); }
+  const seen = new Set(), out = [];
+  const add = (n, type, best_guess) => { const k = type[0] + ':' + n.toLowerCase(); if (seen.has(k)) return; seen.add(k); out.push({ name: n, type, best_guess }); };
+  for (const n of r.models || []) { if (!mm.get('m:' + n)) add(n, 'model', bestGuess(n, hints[n.toLowerCase()], myModelPool)); }
   for (const n of r.groups || []) {
     if (mm.get('g:' + n)) continue;
     const vendorMembers = vendorGroups[n.toLowerCase()];
     const comp = vendorMembers && groupCompositionScore(vendorMembers, hints, myModelPool, uni);
     const guess = comp ? { name: comp.name, reason: `${comp.overlap} of ${comp.total} resolved member models match your "${comp.name}" group (not confident enough to use automatically)` } : bestGuess(n, null, myGroupPool);
-    out.push({ name: n, type: 'group', best_guess: guess });
+    add(n, 'group', guess);
   }
-  return out;
+  // Entries with a best guess are more actionable per token than a blind name, so when a sequence uses
+  // far more unmatched props than fit the budget (a "mega" sequence spanning hundreds of elements can
+  // otherwise blow a batch's whole context on its own), keep those first when the caller trims the list.
+  return out.sort((a, b) => (b.best_guess ? 1 : 0) - (a.best_guess ? 1 : 0));
 }
 // tasks (the batch's own tasksFor(r) result, when known) skips computing/sending needs_model_map for a
 // sequence that isn't up for the "models" task this run -- it was previously sent for every sequence
 // regardless, padding every batch's prompt with model/group mapping detail Claude had no task to act on.
+// A "mega" sequence (hundreds of models/groups spanning a whole show) can otherwise send hundreds of
+// needs_model_map entries on its own, which is how a single 10-sequence batch overflowed Claude's entire
+// 200k-token context in practice. Capped per sequence; the same vendor names recur across many of that
+// vendor's sequences, so later batches (or a later run, once propose_model_map has resolved the common
+// ones) reach whatever got left out this time.
+const MODEL_MAP_CAP = 50;
 function seqInfo(r, tasks) {
   tasks ||= tasksFor(r);
-  const rejected = rejectedNotes(r), needsMap = tasks.includes('models') ? unmappedModels(r) : [];
+  const rejected = rejectedNotes(r), needsMapFull = tasks.includes('models') ? unmappedModels(r) : [];
+  const needsMap = needsMapFull.slice(0, MODEL_MAP_CAP);
   return { id: r.id, file: r.rel_path, in_zip: r.in_zip || undefined, title: r.title, artist: r.artist || null, album: r.album || null,
     vendor: r.vendor, vendor_from: r.vendor_source, author: r.author || null, author_email: r.author_email || null, author_website: r.author_website || null,
     song_link: r.music_url || null, notes: r.comment || null, sequence_type: r.seq_type || null,
@@ -1426,6 +1437,7 @@ function seqInfo(r, tasks) {
     genre: r.genre || null, genre_tag_in_song_file: r.song_genre_tag || null,
     vendor_domain: vendorHost(r) || null, sequence_page: r.seq_url || null,
     needs_model_map: needsMap.length ? needsMap : undefined,
+    needs_model_map_more: needsMapFull.length > needsMap.length ? needsMapFull.length - needsMap.length : undefined,
     previously_rejected: rejected.length ? rejected : undefined };
 }
 function vendorRuleMatches(patterns) {
