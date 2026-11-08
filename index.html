@@ -306,6 +306,8 @@ dialog{max-height:94vh;overflow:auto}
         <label class="field"><span>Sequences per batch</span>
           <select id="aiBatch"><option>5</option><option selected>10</option><option>15</option></select></label>
       </div>
+      <div class="field" id="aiScopeField" hidden><span>Scope</span>
+        <label class="check"><input type="checkbox" id="aiScopeOnly"><span id="aiScopeLabel"></span></label></div>
       <div class="field"><span>What to work on</span>
         <div class="tasks" id="aiTasks"></div></div>
       <label class="check"><input type="checkbox" id="aiWeb"><span>Let Claude search the web for vendors and artists</span></label>
@@ -1445,11 +1447,27 @@ function tasksFor(r) {
     if ((r.models || []).some(n => !mm.get('m:' + n)) || (r.groups || []).some(n => !mm.get('g:' + n))) t.push('models'); }
   return t;
 }
-function taskCounts() {
+function taskCounts(records) {
   const c = { song: 0, vendor: 0, details: 0, art: 0, genre: 0, link: 0, models: 0 }, saved = cfg.ai_tasks, savedWeb = cfg.ai_web;
   cfg.ai_tasks = { song: true, vendor: true, details: true, art: true, genre: true, link: true, models: true }; cfg.ai_web = true;
-  for (const r of S.catalog?.sequences || []) for (const t of tasksFor(r)) c[t]++;
+  for (const r of records || S.catalog?.sequences || []) for (const t of tasksFor(r)) c[t]++;
   cfg.ai_tasks = saved; cfg.ai_web = savedWeb; return c;
+}
+// What "Fix with Claude" would work on if started right now: your current Select-mode picks take
+// priority (a deliberate, explicit choice), then whatever the toolbar is currently filtered to, else
+// everything -- so a huge library can be worked through in deliberate, resumable chunks (one vendor,
+// one search, one hand-picked batch at a time) instead of always being a single all-or-nothing run.
+function aiScope() {
+  if (S.selecting && S.picked.size) {
+    const ids = S.picked;
+    return { records: S.catalog.sequences.filter(r => ids.has(r.id)), label: `your ${fmtN(ids.size)} selected sequence${ids.size === 1 ? '' : 's'}` };
+  }
+  const q = $('#q').value.trim(), v = $('#vendor').value, st = $('#status').value;
+  if (q || v || st || S.genreSel.size || S.groupSel.size) {
+    const bits = [v && `vendor "${v}"`, st && 'song status', S.genreSel.size && 'genre', S.groupSel.size && 'group', q && `search "${q}"`].filter(Boolean);
+    return { records: filtered(), label: `what's currently shown (${bits.join(', ')})` };
+  }
+  return { records: S.catalog.sequences, label: null };
 }
 
 function aiLog(text, cls = '') {
@@ -1679,7 +1697,7 @@ async function runBatch(batch, n, of) {
   aiLog(`Batch ${n} reached its step limit; moving on.`);
 }
 
-async function runAgent() {
+async function runAgent(records) {
   if (AI.running) return;
   if (!S.seqs) return toast('Scan your show folder first so Claude can look through it.', 5000);
   if (!apiKey()) return toast('Enter your Anthropic API key first.', 4000);
@@ -1691,7 +1709,7 @@ async function runAgent() {
     const genreOnly = r => { const t = tasksFor(r); return t.length === 1 && t[0] === 'genre'; };
     const weight = r => { const t = tasksFor(r); return t.every(x => x === 'genre') ? 0.2 : t.every(x => x === 'genre' || x === 'link') ? 0.5 : 1; };
     const key = r => genreOnly(r) ? '1' + r.artist + r.title : '0' + r.vendor + r.author_website + r.author_email + r.rel_path;
-    const queue = S.catalog.sequences.filter(r => tasksFor(r).length).sort((a, b) => key(a).localeCompare(key(b)));
+    const queue = (records || S.catalog.sequences).filter(r => tasksFor(r).length).sort((a, b) => key(a).localeCompare(key(b)));
     // group related sequences together; genre-only work is light, so five times as many fit in a batch
     const size = +cfg.ai_batch || 10, batches = []; let cur = [], w = 0;
     for (const r of queue) { const wt = weight(r); if (cur.length && w + wt > size) { batches.push(cur); cur = []; w = 0; } cur.push(r); w += wt; }
@@ -1800,17 +1818,26 @@ $('#rRejectAll').onclick = () => decide(S.proposals.filter(p => p.status === 'pe
 function openReview() { renderReview(); $('#aiDlg').open && $('#aiDlg').close(); $('#reviewDlg').showModal(); }
 $('#openReview').onclick = openReview; $('#aiReview').onclick = openReview;
 
+let aiScopeNow = null;
+function aiScopeRecords() { return aiScopeNow?.label && $('#aiScopeOnly').checked ? aiScopeNow.records : S.catalog.sequences; }
+const AI_TASK_LABELS = { song: 'Find missing or uncertain songs', vendor: 'Identify vendors', details: 'Fill in missing artists', art: 'Find album art', genre: 'Assign genres', link: "Find each sequence's page on the vendor's website (uses web search)", models: 'Map models to your layout' };
+function renderAiTasks() {
+  const c = taskCounts(aiScopeRecords());
+  $('#aiTasks').innerHTML = Object.keys(AI_TASK_LABELS).map(k => `<label class="check"><input type="checkbox" data-task="${k}" ${cfg.ai_tasks[k] ? 'checked' : ''} ${c[k] ? '' : 'disabled'}><span>${AI_TASK_LABELS[k]} (${c[k]})</span></label>`).join('');
+}
 function openAI() {
   if (!S.seqs) return toast(S.show ? 'Rescan first so Claude can look through your folders.' : 'Choose your show folder first.', 5000);
-  const c = taskCounts();
-  const labels = { song: 'Find missing or uncertain songs', vendor: 'Identify vendors', details: 'Fill in missing artists', art: 'Find album art', genre: 'Assign genres', link: "Find each sequence's page on the vendor's website (uses web search)", models: 'Map models to your layout' };
-  $('#aiTasks').innerHTML = Object.keys(labels).map(k => `<label class="check"><input type="checkbox" data-task="${k}" ${cfg.ai_tasks[k] ? 'checked' : ''} ${c[k] ? '' : 'disabled'}><span>${labels[k]} (${c[k]})</span></label>`).join('');
+  aiScopeNow = aiScope();
+  $('#aiScopeField').hidden = !aiScopeNow.label;
+  if (aiScopeNow.label) { $('#aiScopeOnly').checked = true; $('#aiScopeLabel').textContent = `Only ${fmtN(aiScopeNow.records.length)} of ${fmtN(S.catalog.sequences.length)} sequences — ${aiScopeNow.label}`; }
+  renderAiTasks();
   $('#aiKey').value = apiKey(); $('#aiRemember').checked = !!store.get('apikey', '');
   $('#aiModel').value = cfg.ai_model; $('#aiBatch').value = String(cfg.ai_batch); $('#aiWeb').checked = cfg.ai_web; $('#aiAuto').checked = cfg.ai_auto;
   if (!AI.running) { $('#aiSetup').hidden = false; $('#aiStart').textContent = 'Start'; aiMeter(''); $('#aiLog').hidden = true; $('#aiReview').hidden = true; }
   $('#aiDlg').showModal();
 }
 $('#openAI').onclick = openAI;
+$('#aiScopeOnly').onchange = renderAiTasks;
 $('#aiStart').onclick = () => {
   const key = $('#aiKey').value.trim();
   if (!/^sk-ant-/.test(key)) return toast('That doesn\'t look like an Anthropic API key (they start with sk-ant-).', 5000);
@@ -1818,7 +1845,7 @@ $('#aiStart').onclick = () => {
   if ($('#aiRemember').checked) store.set('apikey', key); else store.del('apikey');
   cfg.ai_model = $('#aiModel').value; cfg.ai_batch = +$('#aiBatch').value; cfg.ai_web = $('#aiWeb').checked; cfg.ai_auto = $('#aiAuto').checked;
   document.querySelectorAll('#aiTasks [data-task]').forEach(i => cfg.ai_tasks[i.dataset.task] = i.checked && !i.disabled);
-  saveCfg(); runAgent();
+  saveCfg(); runAgent(aiScopeRecords());
 };
 $('#aiStop').onclick = () => AI.abort?.abort();
 
