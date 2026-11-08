@@ -383,6 +383,14 @@ dialog{max-height:94vh;overflow:auto}
       <textarea id="sVendors" spellcheck="false" placeholder="Acme Pixel Co = *acmepixel.com*, Acme*, Vendors/Acme/*"></textarea>
       <small>One vendor per line: name = patterns, separated by commas. Patterns are checked against the sequence author, email, website and path.</small></label>
     <label class="check"><input type="checkbox" id="sFolderVendor"><span>Use the top folder name as the vendor when a sequence doesn't name one</span></label>
+    <div class="field" id="sProfileField" hidden><span>Vendor profiles</span>
+      <select id="sProfileVendor"></select>
+      <div class="actions" style="margin-top:.5rem">
+        <button class="btn" type="button" id="sProfileExport">Export this vendor's profile</button>
+        <label class="btn" for="sProfileImport">Import a vendor profile</label>
+        <input type="file" id="sProfileImport" accept=".json,application/json" hidden>
+      </div>
+      <small>A vendor profile bundles everything learned for one vendor — its name-matching rule, model/group mappings, no-song patterns, and genre defaults for its artists — into one file, independent of the rest of your settings. Reuse it on another catalogue, or hand it to someone else who bought the same vendor's sequences, without re-running Claude.</small></div>
     <label class="check"><input type="checkbox" id="sOnline"><span>Look up missing album art online during every scan (Apple Music search)</span></label>
     <label class="field"><span>Genres</span>
       <textarea id="sGenres" spellcheck="false" style="min-height:160px"></textarea>
@@ -1465,11 +1473,19 @@ function taskCounts(records) {
   for (const r of records || S.catalog?.sequences || []) for (const t of tasksFor(r)) c[t]++;
   cfg.ai_tasks = saved; cfg.ai_web = savedWeb; return c;
 }
-// What "Fix with Claude" would work on if started right now: your current Select-mode picks take
-// priority (a deliberate, explicit choice), then whatever the toolbar is currently filtered to, else
-// everything -- so a huge library can be worked through in deliberate, resumable chunks (one vendor,
-// one search, one hand-picked batch at a time) instead of always being a single all-or-nothing run.
+// One-shot scope override for "Fix this sequence with Claude" in the detail view -- set just before
+// calling openAI() and consumed (cleared) the moment aiScope() reads it, so it can never leak into a
+// later, unrelated run. Kept separate from Select mode rather than driving it directly, since mutating
+// S.selecting/S.picked without going through setSelecting() would leave the bulk bar and "selecting" body
+// class out of sync with the state those actually read.
+let aiForceScope = null;
+// What "Fix with Claude" would work on if started right now: a one-shot override (above) wins outright,
+// then your current Select-mode picks (a deliberate, explicit choice), then whatever the toolbar is
+// currently filtered to, else everything -- so a huge library can be worked through in deliberate,
+// resumable chunks (one vendor, one search, one hand-picked batch, or a single sequence) instead of
+// always being a single all-or-nothing run.
 function aiScope() {
+  if (aiForceScope) { const scope = aiForceScope; aiForceScope = null; return scope; }
   if (S.selecting && S.picked.size) {
     const ids = S.picked;
     return { records: S.catalog.sequences.filter(r => ids.has(r.id)), label: `your ${fmtN(ids.size)} selected sequence${ids.size === 1 ? '' : 's'}` };
@@ -2567,6 +2583,7 @@ function renderDetail() {
         </dl>
         <div class="actions">
           <button class="btn" data-act="copy">Copy sequence path</button>
+          ${S.seqs ? `<button class="btn" data-act="fixai">Fix this sequence with Claude</button>` : ''}
           ${marked ? `<button class="btn" data-act="unexempt">Needs a song after all</button>` : ''}
           ${Object.keys(ov).length ? `<button class="btn" data-act="undo">Undo changes to this sequence</button>` : ''}
         </div>
@@ -2637,6 +2654,7 @@ $('#dBody').addEventListener('click', async e => {
   if (a === 'copy') { try { await navigator.clipboard.writeText(r.abs_path); toast('Path copied'); } catch { toast(r.abs_path, 6000); } }
   if (a === 'rescan') { $('#detail').close(); if (S.show) { await scan(); if (S.seqs && recById(r.id)) openDetail(r.id); } else chooseShow(); }
   if (a === 'pickLayout') { await chooseLayout(); if (recById(r.id)) renderDetail(); }
+  if (a === 'fixai') { aiForceScope = { records: [r], label: `"${r.title}" only` }; $('#detail').close(); openAI(); }
   if (a === 'exempt' || a === 'unexempt') {
     const list = cfg.no_audio_expected;
     if (a === 'exempt') { if (!list.includes(r.rel_path)) list.push(r.rel_path); const ov = cfg.overrides[r.rel_path]; if (ov) { delete ov.media; delete ov.linked; } }
@@ -2708,12 +2726,67 @@ async function setExempt(r, on) {
   toast(on ? 'Marked as not needing a song' : 'Mark removed');
 }
 
+// A vendor profile bundles everything learned for one vendor into a single, named file, independent of
+// the rest of Settings -- its name-matching rule, model/group mappings, no-song patterns, and genre
+// defaults for its artists -- so it can be reused on another catalogue, or handed to someone else who
+// bought the same vendor's sequences, without re-running Claude. cfg.model_map/cfg.no_audio_expected
+// aren't themselves vendor-keyed, so this works by checking which entries actually apply to this vendor's
+// own sequences; a same-named prop or glob pattern shared with another vendor (rare) would be included
+// for both, same as it already behaves for matching today.
+function vendorProfileFor(vendor) {
+  const seqs = S.catalog.sequences.filter(r => r.vendor === vendor);
+  const names = new Set();
+  for (const r of seqs) { for (const n of r.models || []) names.add(n.toLowerCase()); for (const n of r.groups || []) names.add(n.toLowerCase()); }
+  const model_map = {};
+  for (const [k, v] of Object.entries(cfg.model_map)) if (v && names.has(k)) model_map[k] = v;
+  const artists = new Set(seqs.map(r => r.artist?.toLowerCase()).filter(Boolean));
+  const artist_genres = {};
+  for (const [k, v] of Object.entries(cfg.artist_genres)) if (artists.has(k)) artist_genres[k] = v;
+  const rule = cfg.vendors.find(v => v.name === vendor);
+  const no_song_patterns = cfg.no_audio_expected.filter(p => noSongRuleMatches([p]).some(r => r.vendor === vendor));
+  return { kind: 'xlights-catalogue-vendor-profile', version: 1, vendor, exported: new Date().toISOString(),
+    vendor_rule: rule ? rule.match : null, model_map, artist_genres, no_song_patterns };
+}
+function applyVendorProfile(data) {
+  if (data?.kind !== 'xlights-catalogue-vendor-profile' || !data.vendor) throw new Error("That file isn't a vendor profile.");
+  let n = 0;
+  if (data.vendor_rule?.length) {
+    const i = cfg.vendors.findIndex(v => v.name.toLowerCase() === data.vendor.toLowerCase());
+    if (i >= 0) cfg.vendors[i].match = [...new Set([...cfg.vendors[i].match, ...data.vendor_rule])];
+    else cfg.vendors.push({ name: data.vendor, match: data.vendor_rule });
+    n++;
+  }
+  for (const [k, v] of Object.entries(data.model_map || {})) { cfg.model_map[k] = v; n++; }
+  for (const [k, v] of Object.entries(data.artist_genres || {})) { cfg.artist_genres[k] = v; n++; }
+  if (data.no_song_patterns?.length) { cfg.no_audio_expected = [...new Set([...cfg.no_audio_expected, ...data.no_song_patterns])]; n += data.no_song_patterns.length; }
+  saveCfg(); invalidateModelMatches();
+  return n;
+}
+$('#sProfileExport').onclick = () => {
+  const v = $('#sProfileVendor').value; if (!v) return;
+  const slug = v.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'vendor';
+  download(`vendor-profile-${slug}.json`, JSON.stringify(vendorProfileFor(v), null, 2), 'application/json');
+};
+$('#sProfileImport').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try {
+    const data = JSON.parse(await f.text());
+    const n = applyVendorProfile(data);
+    fillSettings();
+    if (S.seqs) { busy = true; progress(0.5, 'Applying vendor profile…'); try { await assemble(true); } finally { busy = false; progress(null); } }
+    toast(`Imported ${n} rule${n === 1 ? '' : 's'} for ${data.vendor}.`, 6000);
+  } catch (err) { toast(err.message || "That file isn't a vendor profile.", 5000); }
+};
+
 // ------------------------------------------------------------------ settings dialog
 function fillSettings() {
   $('#sExempt').value = cfg.no_audio_expected.join('\n');
   $('#sAnim').checked = cfg.animation_needs_no_song;
   $('#sVendors').value = cfg.vendors.map(v => `${v.name} = ${(v.match || []).join(', ')}`).join('\n');
   $('#sFolderVendor').checked = cfg.vendor_from_folder;
+  const vendors = [...new Set((S.catalog?.sequences || []).map(r => r.vendor))].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  $('#sProfileField').hidden = !vendors.length;
+  if (vendors.length) $('#sProfileVendor').innerHTML = vendors.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
   $('#sOnline').checked = cfg.fetch_online_art;
   $('#sZips').checked = cfg.look_in_zips; $('#sBackups').checked = cfg.include_backups;
   $('#sSkip').value = cfg.skip_folders.join(', ');
