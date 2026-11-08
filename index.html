@@ -408,7 +408,7 @@ dialog{max-height:94vh;overflow:auto}
 'use strict';
 // Snapshot of this page before anything is rendered: used to write the standalone catalogue.
 const PRISTINE = '<!doctype html>\n' + document.documentElement.outerHTML;
-const VERSION = '3.1.0';
+const VERSION = '3.2.0';
 // A deterrent, not a lock: a determined visitor can read this file and bypass it. hash() is the
 // same non-cryptographic hash used elsewhere (cache keys, record ids) -- not real crypto, which is
 // fine here since the goal is keeping casual visitors from stumbling onto a live personal catalogue,
@@ -609,7 +609,7 @@ function zipListCached(file, key) { if (!zipLists.has(key)) zipLists.set(key, zi
 
 // ------------------------------------------------------------------ walking the folders
 // A source is {kind:'handle', handle, name} (Chrome/Edge, remembered) or {kind:'files', files, name} (all browsers)
-const S = { show: null, music: [], layout: null, seqs: null, index: null, catalog: null, report: null, tree: null, proposals: [], genreSel: new Set(), groupSel: new Set(), modelUniverse: null, xmodelIndex: null, modelMatchCache: null, selecting: false, picked: new Set() };
+const S = { show: null, music: [], layout: null, seqs: null, index: null, catalog: null, report: null, tree: null, proposals: [], genreSel: new Set(), groupSel: new Set(), modelUniverse: null, xmodelIndex: null, vendorGroupMembers: null, modelMatchCache: null, selecting: false, picked: new Set() };
 
 function skipReason(name) {
   if (!cfg.include_backups && BACKUP_DIRS.includes(name.toLowerCase())) return 'xLights backup folder';
@@ -617,7 +617,7 @@ function skipReason(name) {
   return '';
 }
 function newReport() {
-  return { folders: 0, files: 0, seq: 0, xsqz: 0, legacy: 0, media: 0, zips: 0, zipOpened: 0, zipSeq: 0, zipMedia: 0, xmodels: 0,
+  return { folders: 0, files: 0, seq: 0, xsqz: 0, legacy: 0, media: 0, zips: 0, zipOpened: 0, zipSeq: 0, zipMedia: 0, xmodels: 0, vendorLayouts: 0,
            skipped: [], errors: [], duplicates: [], roots: [] };
 }
 
@@ -1070,7 +1070,7 @@ async function scan() {
         report.roots.push(S.layout.name + ' (layout)');
       }
     }
-    S.modelUniverse = null;
+    S.modelUniverse = null; S.vendorGroupMembers = new Map();
     const rgbEntry = layoutFiles.find(e => e.name.toLowerCase() === 'xlights_rgbeffects.xml')
       || showFiles.find(e => e.name.toLowerCase() === 'xlights_rgbeffects.xml');
     if (rgbEntry) { try { S.modelUniverse = parseModelUniverse(await (await rgbEntry.getFile()).text()); } catch {} }
@@ -1098,6 +1098,25 @@ async function scan() {
     await pool(xmodelFiles, 4, async e => {
       try { const m = parseXModel(await (await e.getFile()).text()); if (m) S.xmodelIndex.set(m.name.toLowerCase(), m); } catch {}
     });
+    // A vendor occasionally ships their own xlights_rgbeffects.xml alongside their sequences (their full
+    // show, not just a bundled prop) -- unlike a lone .xmodel, that gives real group membership (which
+    // models belong to which group), so group mapping can compare composition, not just names. Any such
+    // file other than the one already read as your own layout counts; a name/membership collision between
+    // two different vendors' layouts is dropped rather than guessed at.
+    const vendorRgbEntries = showFiles.filter(e => e.name.toLowerCase() === 'xlights_rgbeffects.xml' && e !== rgbEntry);
+    report.vendorLayouts = vendorRgbEntries.length;
+    for (const e of vendorRgbEntries) {
+      try {
+        const vu = parseModelUniverse(await (await e.getFile()).text());
+        for (const name of vu.models) { const key = name.toLowerCase(); if (!S.xmodelIndex.has(key)) S.xmodelIndex.set(key, { name, ...vu.attrs[key] }); }
+        for (const [gkey, members] of Object.entries(vu.groupMembers)) {
+          if (!S.vendorGroupMembers.has(gkey)) { S.vendorGroupMembers.set(gkey, members); continue; }
+          const existing = S.vendorGroupMembers.get(gkey);
+          const same = existing && existing.length === members.length && existing.every((m, i) => m.toLowerCase() === members[i].toLowerCase());
+          if (!same) S.vendorGroupMembers.set(gkey, null);
+        }
+      } catch {}
+    }
 
     // songs: every media file anywhere
     const media = all.filter(e => MEDIA_EXTS.includes(ext(e.name)));
@@ -1224,6 +1243,7 @@ async function assemble(withProgress) {
     report: S.report ? { ...S.report } : null,
     model_universe: S.modelUniverse || S.catalog?.model_universe || { models: [], groups: [] },
     xmodel_hints: S.xmodelIndex ? Object.fromEntries(S.xmodelIndex) : (S.catalog?.xmodel_hints || {}),
+    vendor_group_members: S.vendorGroupMembers ? Object.fromEntries(S.vendorGroupMembers) : (S.catalog?.vendor_group_members || {}),
     sequences: records, art,
   };
   await idb.set('kv', 'catalog', catalog);
@@ -1358,12 +1378,18 @@ function bestGuess(vendorName, vendorAttrs, pool) {
   return best ? { name: best.name, reason: `Closest name match (not confident enough to use automatically)` } : null;
 }
 function unmappedModels(r) {
-  const mm = getModelMatches(), uni = S.catalog?.model_universe || {}, hints = S.catalog?.xmodel_hints || {};
+  const mm = getModelMatches(), uni = S.catalog?.model_universe || {}, hints = S.catalog?.xmodel_hints || {}, vendorGroups = S.catalog?.vendor_group_members || {};
   const myModelPool = (uni.models || []).map(n => ({ name: n, attrs: uni.attrs?.[n.toLowerCase()] }));
   const myGroupPool = (uni.groups || []).map(n => ({ name: n, attrs: null }));
   const out = [];
   for (const n of r.models || []) { if (!mm.get('m:' + n)) out.push({ name: n, type: 'model', best_guess: bestGuess(n, hints[n.toLowerCase()], myModelPool) }); }
-  for (const n of r.groups || []) { if (!mm.get('g:' + n)) out.push({ name: n, type: 'group', best_guess: bestGuess(n, null, myGroupPool) }); }
+  for (const n of r.groups || []) {
+    if (mm.get('g:' + n)) continue;
+    const vendorMembers = vendorGroups[n.toLowerCase()];
+    const comp = vendorMembers && groupCompositionScore(vendorMembers, hints, myModelPool, uni);
+    const guess = comp ? { name: comp.name, reason: `${comp.overlap} of ${comp.total} resolved member models match your "${comp.name}" group (not confident enough to use automatically)` } : bestGuess(n, null, myGroupPool);
+    out.push({ name: n, type: 'group', best_guess: guess });
+  }
   return out;
 }
 function seqInfo(r) {
@@ -1945,6 +1971,7 @@ function openReport() {
       `${fmtN(r.seq)} sequences (.xsq)`, `${fmtN(r.xsqz)} packaged sequences (.xsqz)`, r.legacy ? `${fmtN(r.legacy)} older-format sequences (.xml)` : '',
       r.zipSeq ? `${fmtN(r.zipSeq)} sequences inside zip files` : '', `${fmtN(r.media)} songs and videos`, r.zipMedia ? `${fmtN(r.zipMedia)} songs and videos inside zip files` : '',
       r.xmodels ? `${fmtN(r.xmodels)} bundled model file${r.xmodels === 1 ? '' : 's'} (.xmodel), used to compare shape with your own models` : '',
+      r.vendorLayouts ? `${fmtN(r.vendorLayouts)} vendor-shipped layout file${r.vendorLayouts === 1 ? '' : 's'} (xlights_rgbeffects.xml), used to compare group membership with your own groups` : '',
     ].filter(Boolean))}</ul></div>
     ${r.skipped.length ? `<div><h3>Skipped (${r.skipped.length})</h3><ul>${li(r.skipped.slice(0, 200).map(s => `${esc(s.path)}: ${esc(s.why)}`))}</ul><p class="fine">Change what's skipped in Settings.</p></div>` : ''}
     ${r.errors.length ? `<div><h3>Couldn't read (${r.errors.length})</h3><ul>${li(r.errors.slice(0, 200).map(e => `${esc(e.path)}: ${esc(e.msg)}`))}</ul></div>` : ''}
@@ -2052,13 +2079,50 @@ function modelMatchFor(vendorName, vendorAttrs, pool) {
   if (best && best.s >= 0.82) return { name: best.name, confidence: Math.min(0.9, 0.5 + best.s * 0.4), method: 'name', reason: `Name closely matches "${best.name}"` };
   return null;
 }
+// How well a vendor group's own member models -- each resolved to your layout the same way a lone model
+// would be (your mapping choice, an exact name, else modelMatchFor's shape/name guess) -- overlap a
+// candidate group's own members. Only possible when the vendor shipped their own xlights_rgbeffects.xml
+// (vendor_group_members), since a sequence's <DisplayElements> only ever lists a group's flat name, never
+// its membership. Scoring is separated from the accept threshold so a low-confidence overlap can still
+// surface as a best guess (unmappedModels) even where getModelMatches won't accept it automatically.
+function groupCompositionScore(vendorMembers, hints, myModelPool, uni) {
+  if (!vendorMembers?.length) return null;
+  const myNamesLower = new Set((uni.models || []).map(n => n.toLowerCase()));
+  const resolved = new Set();
+  for (const name of vendorMembers) {
+    const mapped = cfg.model_map[name.toLowerCase()];
+    if (mapped) { resolved.add(mapped.to.toLowerCase()); continue; }
+    if (myNamesLower.has(name.toLowerCase())) { resolved.add(name.toLowerCase()); continue; }
+    const m = modelMatchFor(name, hints[name.toLowerCase()], myModelPool);
+    if (m) resolved.add(m.name.toLowerCase());
+  }
+  if (!resolved.size) return null;
+  let best = null;
+  for (const g of uni.groups || []) {
+    const mine = new Set((uni.groupMembers?.[g.toLowerCase()] || []).map(n => n.toLowerCase()));
+    if (!mine.size) continue;
+    let overlap = 0; for (const n of resolved) if (mine.has(n)) overlap++;
+    if (!overlap) continue;
+    const union = new Set([...resolved, ...mine]).size;
+    const score = union ? overlap / union : 0;
+    if (!best || score > best.score) best = { name: g, score, overlap, total: resolved.size };
+  }
+  return best;
+}
+function groupCompositionMatch(vendorMembers, hints, myModelPool, uni) {
+  const best = groupCompositionScore(vendorMembers, hints, myModelPool, uni);
+  if (best && best.overlap >= Math.min(2, best.total) && best.score >= 0.4) {
+    return { name: best.name, confidence: 0.9, method: 'composition', reason: `${best.overlap} of ${best.total} resolved member models match your "${best.name}" group` };
+  }
+  return null;
+}
 // Best current match (your own choice, an exact name, or a local guess) for every distinct model/group
 // name any sequence uses. Cached until the catalogue is reassembled or a mapping changes.
 function getModelMatches() {
   if (S.modelMatchCache) return S.modelMatchCache;
   const out = new Map();
   if (!S.catalog) return (S.modelMatchCache = out);
-  const uni = S.catalog.model_universe || {}, hints = S.catalog.xmodel_hints || {};
+  const uni = S.catalog.model_universe || {}, hints = S.catalog.xmodel_hints || {}, vendorGroups = S.catalog.vendor_group_members || {};
   const myModelPool = (uni.models || []).map(n => ({ name: n, attrs: uni.attrs?.[n.toLowerCase()] }));
   const myGroupPool = (uni.groups || []).map(n => ({ name: n, attrs: null }));
   const myNamesLower = new Set([...(uni.models || []), ...(uni.groups || [])].map(n => n.toLowerCase()));
@@ -2071,8 +2135,9 @@ function getModelMatches() {
     const mapped = cfg.model_map[name.toLowerCase()];
     if (mapped) { out.set(key, { name: mapped.to, confidence: 1, method: 'you', reason: 'You set this mapping' }); continue; }
     if (myNamesLower.has(name.toLowerCase())) { out.set(key, { name, confidence: 1, method: 'exact', reason: 'Exact name match' }); continue; }
-    const vendorAttrs = isModel ? hints[name.toLowerCase()] : null;
-    out.set(key, modelMatchFor(name, vendorAttrs, isModel ? myModelPool : myGroupPool));
+    if (isModel) { out.set(key, modelMatchFor(name, hints[name.toLowerCase()], myModelPool)); continue; }
+    const vendorMembers = vendorGroups[name.toLowerCase()];
+    out.set(key, (vendorMembers && groupCompositionMatch(vendorMembers, hints, myModelPool, uni)) || modelMatchFor(name, null, myGroupPool));
   }
   return (S.modelMatchCache = out);
 }
