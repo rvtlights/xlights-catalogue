@@ -82,7 +82,14 @@ Once your layout folder is set, any sequence whose models or groups don't alread
 
 Change any dropdown yourself at any time. **Fix with Claude** can also suggest mappings for the ones nothing local resolved confidently (tick "Map models to your layout"); like every Claude suggestion, you review it before it counts.
 
-Once you've matched a vendor's props to yours, click **See your models**, then **Save mapping**. This writes `maphints/catalogue-mapping.xmaphint` into your layout folder (your show folder if you haven't set one), asking permission and confirming before replacing it if it's there already — a file xLights itself reads during **Import Effects**, so every mapping you've confirmed applies automatically to that vendor's sequences from then on, including ones you buy later. **Clear mapping** removes everything you've matched so far from the catalogue (it doesn't touch a file you've already saved).
+Once you've matched a vendor's props to yours, click **See your models**, then **Save mapping**. This writes `maphints/catalogue-mapping.xmaphint` into your layout folder (your show folder if you haven't set one), asking permission and confirming before replacing it if it's there already.
+
+That file is xLights' own "map hints" format — a different thing from the `.xmap` file you might already save and reload by hand after manually mapping a sequence in xLights' **Import Effects** window (that one's a plain mapping saved from one particular import; this one's reusable across every sequence from a vendor). To use it, in that same window:
+
+- Click **Auto Map**. It tries its usual name-matching passes first, then automatically reads every `.xmaphint` file sitting in your show's `maphints` folder and applies those too — no need to browse for the file at all.
+- Or click **Load Mapping** and pick `maphints/catalogue-mapping.xmaphint` yourself (its file picker accepts `.xmaphint` alongside `.xmap`/`.xjmap`).
+
+Either way, every mapping you've confirmed applies to that vendor's sequences from then on, including ones you buy later — you don't need to redo this per sequence. **Clear mapping** removes everything you've matched so far from the catalogue (it doesn't touch a file you've already saved).
 
 ## Exporting a playlist for Falcon Player (FPP)
 
