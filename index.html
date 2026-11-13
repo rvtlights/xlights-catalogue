@@ -266,6 +266,7 @@ dialog{max-height:94vh;overflow:auto}
     </div>
     <button class="btn" id="selectMode" aria-pressed="false">Select</button>
     <button class="btn" id="fppExport">Export FPP playlist</button>
+    <button class="btn" id="csvExport">Export CSV</button>
     <span class="count" id="count" aria-live="polite"></span>
   </div>
   <div class="wrap chiprow" id="genreChips" role="group" aria-label="Filter by genre"></div>
@@ -1276,6 +1277,19 @@ function csvText(c) {
   const rows = [['status','sequence','title','artist','vendor','expected song','matched song','note','song link','sequence page']];
   for (const r of c.sequences) if (r.media_status === 'missing' || r.media_status === 'guess')
     rows.push([r.media_status, r.rel_path, r.title, r.artist, r.vendor, baseAny(r.media_raw), r.media_path, r.media_note, r.music_url, r.seq_url || '']);
+  return rows.map(r => r.map(q).join(',')).join('\r\n');
+}
+// A path worth pasting/searching with, the same convention as abs_path: music-folder paths already carry
+// their own folder name (the "music:" marker is only meaningful internally), everything else sits inside
+// the show folder.
+function mediaAbsPath(r) {
+  if (!r.media_path) return '';
+  return r.media_path.startsWith('music:') ? r.media_path.slice(6) : `${S.show?.name || ''}/${r.media_path}`;
+}
+function filteredCsvText(records) {
+  const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const rows = [['sequence', 'vendor', 'genre', 'sequence file', 'music file']];
+  for (const r of records) rows.push([r.title, r.vendor, r.genre, r.abs_path, mediaAbsPath(r)]);
   return rows.map(r => r.map(q).join(',')).join('\r\n');
 }
 // Falcon Player plays rendered .fseq files, not .xsq sequences, so the playlist assumes xLights' default:
@@ -2347,6 +2361,14 @@ function openFppExport() {
   $('#fppDlg').showModal();
 }
 $('#fppExport').onclick = openFppExport;
+$('#csvExport').onclick = () => {
+  if (!S.catalog) return;
+  const base = filtered();
+  const records = S.selecting && S.picked.size ? base.filter(r => S.picked.has(r.id)) : base;
+  if (!records.length) return toast('No sequences to export. Adjust your filters or pick some with Select first.', 5000);
+  download('sequence_export.csv', filteredCsvText(records), 'text/csv');
+  toast(`Downloaded sequence_export.csv (${fmtN(records.length)} sequence${records.length === 1 ? '' : 's'}).`, 5000);
+};
 $('#fppGo').onclick = () => {
   const name = $('#fppName').value.trim() || 'playlist';
   const playlist = buildFppPlaylist(S.fppRecords, name);

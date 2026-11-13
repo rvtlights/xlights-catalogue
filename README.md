@@ -103,6 +103,10 @@ A couple of things worth knowing:
 - The export dialog tells you how many of the sequences you're exporting still need a song, and, if your show folder or layout folder had any `.fseq` files in them when you last scanned, how many don't have one yet.
 - In FPP, open the playlist editor and import the downloaded file.
 
+## Exporting a spreadsheet
+
+**Export CSV** in the toolbar, next to Export FPP playlist, works the same way: filter the catalogue first (by vendor, by genre chips, by search, by anything), then click it to download a spreadsheet of exactly what's shown — one row per sequence, with its title, vendor, genre, where its sequence file lives, and where its matched song lives. As with the FPP export, click **Select** first and pick specific sequences if you want only some of what's filtered; with nothing selected, everything currently shown goes in.
+
 ## What gets scanned
 
 Every folder inside the show folder and your music folders is searched, however deep. The **scan report** (the link under the summary) shows how many folders and files were searched, what was found, and anything skipped or unreadable.
