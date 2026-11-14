@@ -411,7 +411,7 @@ dialog{max-height:94vh;overflow:auto}
 
 <input type="file" id="dirInput" webkitdirectory multiple hidden>
 <input type="file" id="songFile" accept="audio/*,video/*,.mp3,.m4a,.wav,.ogg,.flac,.wma,.aac,.opus" hidden>
-<div class="toast" id="toast" role="status"></div>
+<div class="toast" id="toast" role="status" popover="manual"></div>
 
 <script id="catalog-data" type="application/json"></script>
 <script>
@@ -2006,7 +2006,15 @@ function artHTML(r) {
   const h = hue(r.title + r.artist);
   return `<div class="ph" style="background:linear-gradient(140deg,hsl(${h} 55% 34%),hsl(${(h + 50) % 360} 60% 22%))">${esc(initials(r))}</div>`;
 }
-function toast(msg, ms = 2600) { const el = $('#toast'); el.textContent = msg; el.classList.add('show'); clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove('show'), ms); }
+// A native <dialog> opened with showModal() renders in the browser's top layer, which sits above the
+// page regardless of z-index -- a plain positioned div can never show above an open one. popover="manual"
+// promotes the toast into the top layer too, so it lands above whichever dialog happens to be open; the
+// opacity-based show/hide below is unchanged, this just also wins the stacking fight.
+function toast(msg, ms = 2600) {
+  const el = $('#toast'); el.textContent = msg; el.classList.add('show'); clearTimeout(el._t);
+  if (el.showPopover && !el.matches(':popover-open')) { try { el.showPopover(); } catch {} }
+  el._t = setTimeout(() => { el.classList.remove('show'); if (el.hidePopover) try { el.hidePopover(); } catch {} }, ms);
+}
 function showError(msg) { $('#alert').innerHTML = `<div class="alert"><p><strong>${esc(msg)}</strong></p></div>`; }
 function setButtons(on) { document.querySelectorAll('#headActions button, #pickShow, #resume, #loadDrive').forEach(b => b.disabled = !on); }
 
