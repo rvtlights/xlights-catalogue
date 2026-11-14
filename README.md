@@ -91,6 +91,8 @@ That file is xLights' own "map hints" format — a different thing from the `.xm
 
 Either way, every mapping you've confirmed applies to that vendor's sequences from then on, including ones you buy later — you don't need to redo this per sequence. **Clear mapping** removes everything you've matched so far from the catalogue (it doesn't touch a file you've already saved).
 
+**Bringing adjustments back the other way.** You'll often still fine-tune a mapping by hand inside xLights while actually sequencing. If you save that as an `.xmap` file there (the same "Save Mapping" button in Import Effects), click **Import mapping from xLights** right below your mappings list in "See your models" and pick that file — it reads every whole-model mapping out of it and adds it to your list here, so the next sequence from that vendor benefits too, not just the one you were just working on. One limit: if you mapped a single vendor prop's sub-strands to two different props of yours, that finer-grained split can't be represented here and is skipped (you'll be told how many).
+
 ## Exporting a playlist for Falcon Player (FPP)
 
 If you run your show through a Falcon Player (FPP) controller rather than from xLights directly, **Export FPP playlist** in the toolbar turns a set of sequences into a playlist file you can import into FPP.
