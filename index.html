@@ -177,6 +177,8 @@ dialog{max-height:94vh;overflow:auto}
 #detail .dl{padding-top:10px}
 .fix{display:grid;gap:12px;margin:0 0 18px;padding:16px;border:1px solid var(--wire);border-radius:var(--r-sm)}
 .fix h3{margin:0;font-size:1rem}
+.fix summary{cursor:pointer}
+.fix summary h3{display:inline}
 .fix input[type=search]{width:100%;padding:9px 12px;background:var(--night);border:1px solid var(--wire);border-radius:var(--r-sm)}
 .cands{list-style:none;margin:0;padding:0;display:grid;gap:6px;max-height:280px;overflow:auto}
 .cand{display:grid;grid-template-columns:1fr auto;gap:4px 12px;align-items:center;padding:9px 12px;background:var(--night);border-radius:var(--r-sm)}
@@ -2464,7 +2466,7 @@ function setView(v) {
 }
 
 // ------------------------------------------------------------------ sequence details + fixing songs
-let navIds = [], curId = null, player = null, picked = null, changeOpen = null;
+let navIds = [], curId = null, player = null, picked = null, changeOpen = null, compareOpen = false;
 function stopPlayer() { if (player) { player.pause(); URL.revokeObjectURL(player.src); player = null; } document.querySelectorAll('[data-listen].playing').forEach(b => { b.classList.remove('playing'); b.textContent = 'Listen'; }); }
 $('#detail').addEventListener('close', () => { stopPlayer(); picked = null; });
 
@@ -2632,10 +2634,14 @@ function modelCompareSection(r) {
     return `<div class="mrow"><div><strong>${esc(name)}</strong> <span class="fine">${isModel ? 'model' : 'group'} · ${myModels.length + myGroups.length} of your models/groups to pick from${m ? ` · ${esc(m.reason)}` : ' · no local match found'}</span></div>
       <select data-mm="${esc(name)}">${options}</select></div>`;
   };
-  return `<div class="fix"><h3>Compare with your layout</h3>
+  // Collapsed by default so a sequence with many unmatched models/groups doesn't dominate the detail view
+  // -- but a mapping pick re-renders the whole dialog (see the data-mm wiring below), so the open state is
+  // tracked in compareOpen rather than reset every time, letting someone work through several picks (or
+  // several sequences via Previous/Next) without re-expanding it each time.
+  return `<details class="fix" id="modelCompare" ${compareOpen ? 'open' : ''}><summary><h3>Compare with your layout (${rows.length})</h3></summary>
     <p class="fine" style="margin:0">${rows.length} of ${(r.models || []).length + (r.groups || []).length} models/groups this sequence uses don't already match your layout by name. Pick the closest one, or leave "Not in my layout" if you don't have an equivalent. "Fix with Claude" can also suggest these.</p>
     ${rows.map(row).join('')}
-  </div>`;
+  </details>`;
 }
 function renderDetail() {
   stopPlayer();
@@ -2684,6 +2690,7 @@ function renderDetail() {
     </div>`;
   $('#dGenre').onchange = async e => { const g = await pickGenreValue(e.target, r.genre); if (g !== null) { await setGenre([r.id], g); renderDetail(); toast(g ? `Genre set to ${g}` : 'Genre removed'); } };
   document.querySelectorAll('#dBody [data-mm]').forEach(sel => { sel.onchange = () => { setModelMap(sel.dataset.mm, sel.value || null); renderDetail(); }; });
+  $('#modelCompare')?.addEventListener('toggle', e => { compareOpen = e.target.open; });
   if ($('#cands')) {
     renderCands(r, '');
     let t; $('#candQ').addEventListener('input', e => { clearTimeout(t); t = setTimeout(() => renderCands(r, e.target.value.trim()), 150); });
