@@ -9,7 +9,7 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="theme-color" content="#0B1D3A">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Righteous&family=Montserrat:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Righteous&family=Montserrat:wght@400;600;700&family=Fredoka:wght@700&display=swap">
 <style>
 /* Palette matched to rvtlights.com's own brand variables (navy-900/800, gold, red, green, cyan). */
 :root{
@@ -38,6 +38,10 @@ header.wrap{position:relative;padding-top:36px;padding-bottom:8px}
 .mascot .board{display:block;width:100%;filter:drop-shadow(0 10px 18px rgba(0,0,0,.45))}
 .mascot .santa{position:absolute;left:-10%;bottom:-12%;width:38%;aspect-ratio:1;border-radius:50%;border:3px solid var(--bulb);object-fit:cover;transform:rotate(-8deg);box-shadow:0 6px 14px rgba(0,0,0,.5)}
 @media (max-width:860px){.mascot{display:none}}
+/* The "xLights" portion of the title echoes xLights' own logo (bold rounded wordmark, warm-to-cool
+   gradient) without departing from the rest of the page's rvtlights.com-matched theme -- the gradient
+   stops are the existing brand vars, not new colours. */
+.xl{font-family:"Fredoka",var(--display);font-weight:700;background:linear-gradient(90deg,var(--holly),var(--bulb),var(--pine));-webkit-background-clip:text;background-clip:text;color:transparent}
 .string circle{opacity:.28}
 .string.lit circle{animation:chase 1.6s ease-out forwards;animation-delay:calc(var(--i) * 28ms)}
 .string.busy circle{animation:twinkle 1.2s ease-in-out infinite alternate;animation-delay:calc(var(--i) * 45ms)}
@@ -209,7 +213,7 @@ dialog{max-height:94vh;overflow:auto}
 </head>
 <body>
 <div class="gate" id="gate" hidden>
-  <h1>Mad Mapper – xLights xPedition</h1>
+  <h1>Mad Mapper – <span class="xl">xLights</span> xPedition</h1>
   <p>This is a private tool. Enter the password to continue.</p>
   <form id="gateForm">
     <input type="password" id="gatePw" autocomplete="off" aria-label="Password">
@@ -239,7 +243,7 @@ dialog{max-height:94vh;overflow:auto}
     <img class="santa" src="icon-512.png" alt="" loading="lazy">
   </div>
   <svg class="string" id="string" aria-hidden="true"></svg>
-  <h1>Mad Mapper – xLights xPedition</h1>
+  <h1>Mad Mapper – <span class="xl">xLights</span> xPedition</h1>
   <p class="summary" id="summary">See every xLights sequence you own, with its album art, artist, vendor and length, and find any sequence that's missing its song.</p>
   <div class="actions-row" id="headActions" hidden>
     <button class="btn" id="rescan">Rescan</button>
