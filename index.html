@@ -411,6 +411,7 @@ dialog{max-height:94vh;overflow:auto}
 
 <input type="file" id="dirInput" webkitdirectory multiple hidden>
 <input type="file" id="songFile" accept="audio/*,video/*,.mp3,.m4a,.wav,.ogg,.flac,.wma,.aac,.opus" hidden>
+<input type="file" id="artFile" accept="image/*" hidden>
 <div class="toast" id="toast" role="status" popover="manual"></div>
 
 <script id="catalog-data" type="application/json"></script>
@@ -1209,7 +1210,7 @@ async function assemble(withProgress) {
     const artist = tidy(ov.artist || head.artist || am.artist || fa);
     if (ov.title || ov.artist || ov.album) ai.push('details');
     let art = am.art, artSrc = am.art ? 'embedded' : '';
-    if (ov.art_url) { art = ov.art_url; artSrc = 'claude'; ai.push('album art'); }
+    if (ov.art_url) { art = ov.art_url; artSrc = ov.art_url_by === 'you' ? 'you' : 'claude'; if (artSrc !== 'you') ai.push('album art'); }
     done++; if (withProgress && (done % 5 === 0 || done === total)) progress(0.5 + 0.45 * done / total, `Matching songs and album art: ${done} of ${total}`);
     return {
       id: hash(rel).slice(0, 12),
@@ -2518,6 +2519,21 @@ async function setSeqUrl(r, url, by = 'you') {
   r.seq_url = url; r.seq_url_source = url ? by : '';
   saveCfg(); await idb.set('kv', 'catalog', S.catalog);
 }
+// Setting your own art is a direct record mutation (same shape artHTML already reads: r.art is a key into
+// S.catalog.art), same as setSeqUrl -- cheap, and correct since every view of this record shares the one
+// object. Removing it needs the normal resolution (embedded/online/none) back, so that path reassembles
+// instead of trying to guess what used to be there.
+async function setArt(r, dataUrl) {
+  const ov = (cfg.overrides[r.rel_path] ||= {});
+  if (dataUrl) {
+    Object.assign(ov, { art_url: dataUrl, art_url_by: 'you' });
+    const k = hash(dataUrl); S.catalog.art[k] = dataUrl; r.art = k; r.art_source = 'you';
+    saveCfg(); await idb.set('kv', 'catalog', S.catalog);
+  } else {
+    delete ov.art_url; delete ov.art_url_by; if (!Object.keys(ov).length) delete cfg.overrides[r.rel_path];
+    saveCfg(); if (S.seqs) await assemble(false);
+  }
+}
 
 function songLinks(r) {
   const q = [r.artist, r.title].filter(Boolean).join(' '), enc = encodeURIComponent, links = [];
@@ -2653,11 +2669,13 @@ function renderDetail() {
           ${fact('xLights', esc(r.xlights_version))}${fact('File', esc(r.rel_path))}
           ${fact('Format', r.legacy ? 'Older xLights sequence (.xml)' : '')}${fact('Zip', r.in_zip ? esc(r.in_zip) + ' (not unzipped)' : '')}
           ${fact('Changed', esc((r.modified || '').replace('T', ' ')))}${fact('Size', (r.size / 1048576).toFixed(1) + ' MB')}
-          ${fact('Art', { online: 'Found online', claude: 'Chosen by Claude', embedded: 'From the song file' }[r.art_source] || '')}
+          ${fact('Art', { online: 'Found online', claude: 'Chosen by Claude', embedded: 'From the song file', you: 'Added by you' }[r.art_source] || '')}
           ${fact('Notes', esc(r.comment))}${fact('Problem', esc(r.error))}
         </dl>
         <div class="actions">
           <button class="btn" data-act="copy">Copy sequence path</button>
+          <button class="btn" data-act="addart">${r.art_source === 'you' ? 'Change album art' : 'Add album art'}</button>
+          ${r.art_source === 'you' ? `<button class="btn" data-act="removeart">Remove album art</button>` : ''}
           ${S.seqs ? `<button class="btn" data-act="fixai">Fix this sequence with Claude</button>` : ''}
           ${marked ? `<button class="btn" data-act="unexempt">Needs a song after all</button>` : ''}
           ${Object.keys(ov).length ? `<button class="btn" data-act="undo">Undo changes to this sequence</button>` : ''}
@@ -2752,6 +2770,20 @@ $('#dBody').addEventListener('click', async e => {
     inp.click();
   }
   if (a === 'cancelpick') { picked = null; renderDetail(); }
+  if (a === 'addart') {
+    const inp = $('#artFile'); inp.value = '';
+    inp.onchange = async () => {
+      const file = inp.files[0]; if (!file) return;
+      toast('Reading image…');
+      try {
+        const dataUrl = await thumbnail(file);
+        if (!dataUrl) return toast("That doesn't look like an image this browser can read.", 5000);
+        await setArt(r, dataUrl); renderDetail(); toast('Album art updated');
+      } catch (err) { toast('Could not set album art: ' + err.message, 6000); }
+    };
+    inp.click();
+  }
+  if (a === 'removeart') { await setArt(r, ''); renderDetail(); toast('Album art removed; back to the original'); }
   if (a === 'changesong') { changeOpen = r.id; renderDetail(); }
   if (a === 'editlink') {
     const v = prompt(`Web address of ${r.title} on ${r.vendor}'s website`, r.seq_url || '');

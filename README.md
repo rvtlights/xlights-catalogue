@@ -63,6 +63,12 @@ A sequence's details show a **Sequence page** link to where that sequence is sol
 
 When there's no link yet, **Find on Sequence Scout** opens sequencescout.com already searching for that song, where you can compare every vendor that sells a sequence for it, open the right one and paste its address with Add link. Another button searches the vendor's own site. Sequences that already have a link get a **Compare on Sequence Scout** button. (Sequence Scout asks automated tools not to read its pages, so these are links for you to click; Claude doesn't read it.) Links are kept across rescans and are included in the catalogue's data file and the songs-to-check list.
 
+## Album art
+
+Art comes from, in order: embedded in the song file, Claude (tick "Find album art" in Fix with Claude — it only proposes an image it actually found, matching artist and title), or online lookup if you've turned that on in Settings.
+
+To use your own picture instead, open the sequence and click **Add album art** (or **Change album art** if one's already set), then pick an image file from your computer. It's resized down before saving, so even a large photo stays small in the catalogue. **Remove album art** goes back to whichever of the above the app would normally have used. Your own choice always wins over everything else and is kept across rescans.
+
 ## Models and groups
 
 Every sequence's details list the **Models** and **Groups** it uses, read from the sequence itself. Past eight, the list shows "+N more" so a sequence with dozens of props doesn't take over the page; click it to see the rest. You can search for a model or prop by name in the main search box, and the **group chips** under the genre chips let you filter to everything that uses a particular group (click several to combine them, the same way genre chips work).
