@@ -2353,7 +2353,7 @@ function openModelsReport() {
   $('#modelsBody').innerHTML = `
     ${hasUniverse ? '' : `<div class="alert warn" style="margin:0"><p><strong>No real layout found yet.</strong> This looks like every model/group below came from sequences, not from an xlights_rgbeffects.xml — if the folder you scan is a library of vendor downloads, that's expected: it won't have your own props. Pick your actual xLights show folder as your <strong>layout folder</strong> so comparisons and mappings use your real props.</p><button class="btn" id="mmPickLayout">Choose layout folder</button></div>`}
     ${mapped.length ? `<div><h3>Your mappings to other layouts (${mapped.length})</h3>
-      <ul>${mapped.map(({ to, from }) => `<li>"${esc(from)}" → your "${esc(to)}"</li>`).join('')}</ul>
+      <ul>${mapped.map(({ to, from }) => `<li>"${esc(from)}" → your "${esc(to)}" <button class="link" data-rmmap="${esc(from)}">Remove</button></li>`).join('')}</ul>
       <p class="fine" style="margin:0">Save these so xLights maps every future sequence from the same vendors automatically.</p>
       <div class="actions"><button class="btn primary sm" id="mmSave">Save mapping${mapTarget ? ` to ${esc(mapTarget)}` : ''}</button><button class="btn sm" id="mmClear">Clear mapping</button></div></div>` : ''}
     <div><h3>Bring adjustments back from xLights</h3>
@@ -2379,6 +2379,8 @@ function openModelsReport() {
   $('#modelsDlg').showModal();
 }
 $('#modelsBody').addEventListener('click', e => {
+  const rm = e.target.closest('[data-rmmap]');
+  if (rm) { setModelMap(rm.dataset.rmmap, null); openModelsReport(); return; }
   const b = e.target.closest('[data-jump]'); if (!b) return;
   $('#modelsDlg').close(); $('#q').value = b.dataset.jump; render(); $('#q').focus();
 });
