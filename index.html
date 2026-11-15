@@ -7,15 +7,16 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="favicon.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<meta name="theme-color" content="#0f1b2d">
+<meta name="theme-color" content="#0B1D3A">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Righteous&family=Montserrat:wght@400;600;700&display=swap">
 <style>
+/* Palette matched to rvtlights.com's own brand variables (navy-900/800, gold, red, green, cyan). */
 :root{
-  --night:#0f1b2d; --deep:#172741; --wire:#2a3e5f; --frost:#eaf0f8; --mist:#9db0cb;
-  --bulb:#ffc861; --holly:#ef5a5f; --pine:#49b97c; --ice:#79c3ff; --amber:#ff9f43;
-  --display:"Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
-  --body:"Atkinson Hyperlegible", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --night:#050d1c; --deep:#0B1D3A; --wire:rgba(255,193,7,.22); --frost:#EDF3FF; --mist:#9FB3D1;
+  --bulb:#FFC107; --holly:#E03131; --pine:#39FF14; --ice:#3FE0F0; --amber:#FFA000;
+  --display:"Righteous", Impact, "Segoe UI", system-ui, sans-serif;
+  --body:"Montserrat", Arial, "Segoe UI", system-ui, -apple-system, sans-serif;
   --r-lg:14px; --r-sm:6px;
 }
 *{box-sizing:border-box}
@@ -1030,8 +1031,16 @@ function mapGenre(raw) {
   for (const [re, name] of GENRE_MAP) if (re.test(g)) { const hit = cfg.genres.find(x => x.toLowerCase() === name.toLowerCase()); if (hit) return hit; }
   return '';
 }
-// genres in your list get evenly spaced colours (golden angle); others fall back to a colour from their name
-const gcol = g => { const i = cfg.genres.indexOf(g); return `hsl(${i >= 0 ? Math.round((i * 137.508 + 8) % 360) : hue(g)} 65% 63%)`; };
+// The site's own accent colours (rvtlights.com's gold/green/cyan/magenta/violet/red) cycle first, so chip
+// colours read as the same brand; golden-angle hue spacing (unaffected by how long the palette runs) fills
+// in past it rather than repeating a colour for a longer custom genre list. Genres outside the list at all
+// fall back to a colour hashed from their name.
+const BRAND_ACCENTS = ['#FFC107', '#39FF14', '#3FE0F0', '#FF3DD0', '#8B6CFF', '#E03131'];
+const gcol = g => {
+  const i = cfg.genres.indexOf(g);
+  if (i < 0) return `hsl(${hue(g)} 65% 63%)`;
+  return i < BRAND_ACCENTS.length ? BRAND_ACCENTS[i] : `hsl(${Math.round((i * 137.508 + 8) % 360)} 65% 63%)`;
+};
 
 function resolveVendor(head, rel) {
   const author = head.author || '', email = head['author-email'] || '', site = head['author-website'] || '';
