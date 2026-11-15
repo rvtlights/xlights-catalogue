@@ -1,6 +1,6 @@
 {
-  "name": "xLights Sequence Catalogue",
-  "short_name": "xLights Catalogue",
+  "name": "Mad Mapper – Xpedition",
+  "short_name": "Mad Mapper",
   "description": "Search your xLights sequences, match every sequence to its song, and keep your catalogue in Google Drive.",
   "start_url": "./",
   "scope": "./",

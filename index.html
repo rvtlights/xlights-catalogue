@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>xLights sequence catalogue</title>
+<title>Mad Mapper – Xpedition</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="favicon.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -28,9 +28,16 @@ button,input,select,textarea{font:inherit;color:inherit}
 .wrap{max-width:1400px;margin:0 auto;padding-left:clamp(16px,3vw,40px);padding-right:clamp(16px,3vw,40px)}
 
 /* header */
-header.wrap{padding-top:36px;padding-bottom:8px}
+header.wrap{position:relative;padding-top:36px;padding-bottom:8px}
 .string{display:block;width:100%;height:46px;overflow:visible}
 .string path{fill:none;stroke:var(--wire);stroke-width:1.5}
+/* The mascot "caught the connection" board: a knowing nod to the red-string conspiracy-board meme, built
+   from SVG (no image-gen tool available to draw Santa in an actual pointing pose) -- the little cards use
+   the same brand accents as genre chips, doubling as a wink at xLights' own colour-coded effect timeline. */
+.mascot{position:absolute;top:14px;right:clamp(16px,3vw,40px);width:clamp(110px,14vw,150px);pointer-events:none}
+.mascot .board{display:block;width:100%;filter:drop-shadow(0 10px 18px rgba(0,0,0,.45))}
+.mascot .santa{position:absolute;left:-10%;bottom:-12%;width:38%;aspect-ratio:1;border-radius:50%;border:3px solid var(--bulb);object-fit:cover;transform:rotate(-8deg);box-shadow:0 6px 14px rgba(0,0,0,.5)}
+@media (max-width:860px){.mascot{display:none}}
 .string circle{opacity:.28}
 .string.lit circle{animation:chase 1.6s ease-out forwards;animation-delay:calc(var(--i) * 28ms)}
 .string.busy circle{animation:twinkle 1.2s ease-in-out infinite alternate;animation-delay:calc(var(--i) * 45ms)}
@@ -202,7 +209,7 @@ dialog{max-height:94vh;overflow:auto}
 </head>
 <body>
 <div class="gate" id="gate" hidden>
-  <h1>Sequence catalogue</h1>
+  <h1>Mad Mapper – Xpedition</h1>
   <p>This is a private tool. Enter the password to continue.</p>
   <form id="gateForm">
     <input type="password" id="gatePw" autocomplete="off" aria-label="Password">
@@ -211,8 +218,28 @@ dialog{max-height:94vh;overflow:auto}
   </form>
 </div>
 <header class="wrap">
+  <div class="mascot" aria-hidden="true">
+    <svg class="board" viewBox="0 0 160 100">
+      <rect x="2" y="2" width="156" height="96" rx="10" fill="var(--deep)" stroke="var(--wire)" stroke-width="2"/>
+      <rect x="20" y="18" width="30" height="20" rx="2" fill="#FFC107" transform="rotate(-6 35 28)"/>
+      <rect x="96" y="14" width="28" height="20" rx="2" fill="#39FF14" transform="rotate(5 110 24)"/>
+      <rect x="58" y="54" width="30" height="20" rx="2" fill="#3FE0F0" transform="rotate(-4 73 64)"/>
+      <rect x="108" y="58" width="26" height="18" rx="2" fill="#FF3DD0" transform="rotate(7 121 67)"/>
+      <g fill="none" stroke="#E03131" stroke-width="1.6">
+        <path d="M35 38 L55 50 L73 54"/>
+        <path d="M110 34 L95 46 L73 58"/>
+        <path d="M88 64 L100 66 L121 67"/>
+        <path d="M35 28 L20 70 L58 64"/>
+      </g>
+      <circle cx="35" cy="28" r="2.6" fill="#E03131"/>
+      <circle cx="110" cy="24" r="2.6" fill="#E03131"/>
+      <circle cx="73" cy="64" r="2.6" fill="#E03131"/>
+      <circle cx="121" cy="67" r="2.6" fill="#E03131"/>
+    </svg>
+    <img class="santa" src="icon-512.png" alt="" loading="lazy">
+  </div>
   <svg class="string" id="string" aria-hidden="true"></svg>
-  <h1>Sequence catalogue</h1>
+  <h1>Mad Mapper – Xpedition</h1>
   <p class="summary" id="summary">See every xLights sequence you own, with its album art, artist, vendor and length, and find any sequence that's missing its song.</p>
   <div class="actions-row" id="headActions" hidden>
     <button class="btn" id="rescan">Rescan</button>
@@ -2032,7 +2059,7 @@ function setButtons(on) { document.querySelectorAll('#headActions button, #pickS
 
 function drawString() {
   const svg = $('#string'), w = Math.max(320, svg.clientWidth || 1000), n = Math.round(w / 22);
-  const cols = ['#ef5a5f','#49b97c','#ffc861','#79c3ff','#c78bff'];
+  const cols = ['#E03131','#39FF14','#FFC107','#3FE0F0','#8B6CFF'];
   svg.setAttribute('viewBox', `0 0 ${w} 46`);
   let d = 'M0 8', dots = '';
   for (let i = 0; i < n; i++) {

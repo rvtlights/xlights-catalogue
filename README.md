@@ -1,4 +1,4 @@
-# xLights Sequence Catalogue (web app)
+# Mad Mapper – Xpedition (web app)
 
 The whole app is one file, `index.html`. Open it in a browser, choose your xLights show folder, and it builds a searchable catalogue of every sequence with album art, artist, vendor and length, and flags any sequence missing its song.
 
