@@ -115,6 +115,10 @@ A couple of things worth knowing:
 
 **Export CSV** in the toolbar, next to Export FPP playlist, works the same way: filter the catalogue first (by vendor, by genre chips, by search, by anything), then click it to download a spreadsheet of exactly what's shown — one row per sequence, with its title, vendor, genre, where its sequence file lives, and where its matched song lives. As with the FPP export, click **Select** first and pick specific sequences if you want only some of what's filtered; with nothing selected, everything currently shown goes in.
 
+## Set list
+
+**Set list**, also in the toolbar, turns the current filtered/selected sequences (in whatever order they're currently sorted) into a timed schedule: tell it what time the show starts, and it works out the clock time each sequence actually starts and ends at. Handy for lining up anything outside the show that needs to start at a specific moment — a projection mapping overlay, a second controller, anything with its own schedule. There's also a gap field if your real playback has a pause between sequences (defaults to none, back-to-back). **Download CSV** saves the same schedule to take elsewhere.
+
 ## What gets scanned
 
 Every folder inside the show folder and your music folders is searched, however deep. The **scan report** (the link under the summary) shows how many folders and files were searched, what was found, and anything skipped or unreadable.

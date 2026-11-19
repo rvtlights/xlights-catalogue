@@ -282,6 +282,7 @@ dialog{max-height:94vh;overflow:auto}
     <button class="btn" id="selectMode" aria-pressed="false">Select</button>
     <button class="btn" id="fppExport">Export FPP playlist</button>
     <button class="btn" id="csvExport">Export CSV</button>
+    <button class="btn" id="scheduleExport">Set list</button>
     <span class="count" id="count" aria-live="polite"></span>
   </div>
   <div class="wrap chiprow" id="genreChips" role="group" aria-label="Filter by genre"></div>
@@ -378,6 +379,20 @@ dialog{max-height:94vh;overflow:auto}
     <label class="field"><span>Playlist name</span><input type="text" id="fppName" spellcheck="false"></label>
     <p class="fine" id="fppSummary" style="margin:0"></p>
     <div class="actions"><button class="btn primary" id="fppGo">Download playlist</button></div>
+  </div>
+</dialog>
+
+<dialog id="scheduleDlg" aria-labelledby="scheduleTitle">
+  <div class="pane">
+    <button class="close" aria-label="Close" data-close>×</button>
+    <h2 id="scheduleTitle">Set list</h2>
+    <p class="fine" style="margin:0">A timed schedule for the sequences currently filtered or selected, in their current sort order — handy for lining up a projection mapping overlay, or anything else that needs to start at a specific clock time.</p>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin:14px 0">
+      <label class="field" style="flex:1 1 160px"><span>Show starts at</span><input type="time" id="scheduleStart" value="18:00"></label>
+      <label class="field" style="flex:1 1 160px"><span>Gap between sequences (seconds)</span><input type="number" id="scheduleGap" value="0" min="0" step="1"></label>
+    </div>
+    <div class="report" id="scheduleBody"></div>
+    <div class="actions"><button class="btn primary" id="scheduleDownload">Download CSV</button></div>
   </div>
 </dialog>
 
@@ -2454,6 +2469,48 @@ $('#fppGo').onclick = () => {
   download(`${name.replace(/[\\/:*?"<>|]/g, '_')}.json`, JSON.stringify(playlist, null, 2), 'application/json');
   $('#fppDlg').close();
   toast(`Downloaded ${name}.json. Import it as a playlist in FPP.`, 6000);
+};
+
+// A timed program: cumulative clock time per sequence, back-to-back by default (gap is adjustable, not
+// everyone's playback has one). Shares the exact scoping Export FPP playlist/CSV already use, and the
+// current sort order, since that's the order the show would actually play in.
+function computeSchedule() {
+  const records = S.scheduleRecords || [];
+  const [hh, mm] = ($('#scheduleStart').value || '18:00').split(':').map(Number);
+  const gap = Math.max(0, +$('#scheduleGap').value || 0);
+  let t = (hh || 0) * 3600 + (mm || 0) * 60;
+  return records.map((r, i) => { const start = t, end = t + (r.duration || 0); t = end + gap; return { n: i + 1, start, end, r }; });
+}
+function clockFmt(totalSeconds) {
+  const s = ((Math.round(totalSeconds) % 86400) + 86400) % 86400;
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  const ap = h < 12 ? 'AM' : 'PM', h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')} ${ap}`;
+}
+function renderSchedule() {
+  const rows = computeSchedule().map(({ n, start, end, r }) =>
+    `<tr><td>${n}</td><td>${clockFmt(start)}</td><td>${clockFmt(end)}</td><td>${mmss(r.duration || 0)}</td><td>${esc(r.title)}</td><td>${esc(r.vendor)}</td></tr>`).join('');
+  $('#scheduleBody').innerHTML = rows
+    ? `<table><thead><tr><th>#</th><th>Start</th><th>End</th><th>Length</th><th>Sequence</th><th>Vendor</th></tr></thead><tbody>${rows}</tbody></table>`
+    : '<p class="fine" style="margin:0">Nothing to schedule.</p>';
+}
+$('#scheduleExport').onclick = () => {
+  if (!S.catalog) return;
+  const base = filtered();
+  const records = S.selecting && S.picked.size ? base.filter(r => S.picked.has(r.id)) : base;
+  if (!records.length) return toast('No sequences to schedule. Adjust your filters or pick some with Select first.', 5000);
+  S.scheduleRecords = records;
+  renderSchedule();
+  $('#scheduleDlg').showModal();
+};
+$('#scheduleStart').addEventListener('input', renderSchedule);
+$('#scheduleGap').addEventListener('input', renderSchedule);
+$('#scheduleDownload').onclick = () => {
+  const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const rows = [['#', 'start', 'end', 'length (s)', 'sequence', 'vendor']];
+  computeSchedule().forEach(({ n, start, end, r }) => rows.push([n, clockFmt(start), clockFmt(end), r.duration || 0, r.title, r.vendor]));
+  download('set_list.csv', rows.map(row => row.map(q).join(',')).join('\r\n'), 'text/csv');
+  toast(`Downloaded set_list.csv (${rows.length - 1} sequence${rows.length - 1 === 1 ? '' : 's'}).`, 5000);
 };
 
 function render() {
